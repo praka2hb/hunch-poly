@@ -1,0 +1,52 @@
+To: support@privy.io
+Subject: URGENT: Unable to exchange OAuth code - Apple Sign In Backend Error
+
+Hi Privy Support Team,
+
+I'm experiencing a persistent "Unable to exchange oauth code for provider" error specifically with Apple Sign In on iOS. Twitter and Google OAuth work fine.
+
+DETAILS:
+- Privy App ID: cmiq91u0h006jl70cuyb6az3f
+- Bundle ID (used as Client ID): com.hunch.run
+- Key ID: DZA3A74VVX
+- Platform: iOS (React Native/Expo)
+- SDK Version: @privy-io/expo v0.58.6
+
+WHAT'S HAPPENING:
+1. iOS app successfully launches Apple Sign In
+2. User authenticates with Apple successfully  
+3. Authorization code is received by the app
+4. Error occurs during code exchange on Privy's backend
+
+ERROR MESSAGE:
+"Unable to exchange oauth code for provider."
+
+CONFIGURATION VERIFIED (MULTIPLE TIMES):
+✅ Bundle ID (com.hunch.run) used as Client ID in Privy Dashboard (NOT Services ID)
+✅ Private Key properly formatted with BEGIN/END markers (validated)
+✅ Team ID is 10 characters and correct
+✅ Key ID matches: DZA3A74VVX
+✅ Services ID created and configured in Apple Developer Portal:
+   - Primary App ID: com.hunch.run
+   - Domain: auth.privy.io  
+   - Return URL: https://auth.privy.io/api/v1/oauth/callback (exact match, no trailing slash)
+✅ App ID has "Sign in with Apple" enabled as Primary
+✅ Key has "Sign in with Apple" enabled
+✅ Waited 15+ minutes after Apple Portal configuration
+✅ Re-entered credentials multiple times in Privy Dashboard
+✅ Redirect URI "hunch://" added in Privy Dashboard
+
+WHAT I NEED:
+Could you please check your server logs for App ID "cmiq91u0h006jl70cuyb6az3f" 
+to see the detailed error response from Apple's token endpoint?
+
+Specifically:
+- What error is Apple returning when Privy attempts the code exchange?
+- Is there an issue with credentials, rate limits, or Apple API connectivity?
+- Are the credentials being sent correctly in the token exchange request?
+
+This is blocking production launch. Any help would be greatly appreciated!
+
+Thank you,
+[Your Name]
+[Your Email]

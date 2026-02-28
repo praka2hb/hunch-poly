@@ -1,0 +1,82 @@
+{
+  "expo": {
+    "name": "Hunch",
+    "slug": "hunch-inc",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "hunch",
+    "userInterfaceStyle": "automatic",
+    "deepLinking": {
+      "enabled": true,
+      "scheme": "hunch"
+    },
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFE500"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "usesAppleSignIn": true,
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hunch.run",
+      "splash": {
+        "image": "./assets/hunch.jpg",
+        "resizeMode": "contain",
+        "backgroundColor": "#FFE500",
+        "tabletImage": "./assets/hunch.jpg"
+      },
+      "associatedDomains": [
+        "webcredentials:hunch.run",
+        "webcredentials:hunch.run"
+      ],
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        },
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundColor": "#FFE500"
+      },
+      "package": "com.hunch.run"
+    },
+    "extra": {
+      "privyAppId": "cmiq91u0h006jl70cuyb6az3f",
+      "privyClientId": "client-WY6TPKUhXLQRQM8fGYrMc36tyhszpq7DLgNyaUgSKrPo6",
+      "passkeyAssociatedDomain": "https://hunch.run",
+      "router": {},
+      "eas": {
+        "projectId": "15a1e77b-4e67-4077-84d7-e63e3c91ba27"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-apple-authentication",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "17.5"
+          },
+          "android": {
+            "compileSdkVersion": 35
+          }
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      "expo-notifications"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

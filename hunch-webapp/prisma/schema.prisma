@@ -1,0 +1,325 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OnboardingStep {
+  LINK_X
+  USERNAME
+  INTERESTS
+  SUGGESTED_FOLLOWERS
+  COMPLETE
+}
+
+model User {
+  id             String     @id @default(cuid())
+  privyId        String     @unique
+  walletAddress  String     @unique
+  displayName    String?
+  avatarUrl      String?
+  preferences    String[]   @default([])
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  followerCount  Int        @default(0)
+  followingCount Int        @default(0)
+  followers      Follow[]   @relation("Follower")
+  following      Follow[]   @relation("Following")
+  trades         Trade[]
+  positions      Position[]
+  feedItems      FeedItem[]
+
+  // Copy trading relations
+  copySettingsAsFollower CopySettings[] @relation("CopyFollower")
+  copySettingsAsLeader   CopySettings[] @relation("CopyLeader")
+
+  // Onboarding & Auth fields
+  username               String?
+  normalizedUsername     String?        @unique
+  onboardingStep         OnboardingStep @default(LINK_X)
+  hasCompletedOnboarding Boolean        @default(false)
+  walletReady            Boolean        @default(false)
+  onboardingUpdatedAt    DateTime?
+  authProvider           String? // "apple" | "twitter" | etc.
+  hasLinkedX             Boolean        @default(false)
+
+  // Per-user Polymarket CLOB API credentials (derived from wallet)
+  clobApiKey        String? // Polymarket CLOB API key
+  clobApiSecret     String? // Polymarket CLOB API secret
+  clobApiPassphrase String? // Polymarket CLOB API passphrase
+
+  // Push notifications
+  expoPushToken             String?
+  tradeNotificationsEnabled Boolean @default(true)
+
+  posts Post[]
+
+  @@index([privyId])
+  @@index([walletAddress])
+  @@index([onboardingStep])
+  @@index([hasCompletedOnboarding])
+}
+
+model Trade {
+  id                String    @id @default(cuid())
+  userId            String
+  marketTicker      String // stores conditionId for backwards compatibility with feed/social
+  eventTicker       String?
+  source            String?
+  provider          String? // now "polymarket" instead of "jupiter"
+  side              String
+  action            String    @default("BUY")
+  amount            String
+  executedInAmount  String?
+  executedOutAmount String?
+  transactionSig    String // now stores Polygon tx hash (0x...)
+  externalOrderId   String? // now stores Polymarket CLOB orderID
+  quote             String? // now stores raw Polymarket CLOB order response JSON
+  isDummy           Boolean   @default(false)
+  entryPrice        Decimal?  @db.Decimal(20, 10)
+  createdAt         DateTime  @default(now())
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  positionId        String?   @db.Uuid
+  position          Position? @relation(fields: [positionId], references: [id])
+
+  // Polymarket-specific fields
+  conditionId   String? // Polymarket market condition ID
+  tokenId       String? // YES/NO token ID for CLOB
+  orderStatus   String? // LIVE | MATCHED | CANCELLED | FILLED
+  marketTitle   String? // denormalized market question for feed display
+  feeAmount     Decimal? @db.Decimal(20, 10)
+  walletAddress String? // user's Polygon wallet address for on-chain traceability
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([transactionSig])
+  @@index([isDummy])
+  @@index([eventTicker])
+  @@index([marketTicker])
+  @@index([action])
+  @@index([positionId])
+  @@index([source])
+  @@index([provider])
+  @@index([externalOrderId])
+  @@index([conditionId])
+  @@index([tokenId])
+  @@index([orderStatus])
+}
+
+enum PositionStatus {
+  OPEN
+  CLOSED
+}
+
+model Position {
+  id           String         @id @default(uuid()) @db.Uuid
+  userId       String
+  marketTicker String
+  eventTicker  String?
+  side         String // "yes" or "no"
+  status       PositionStatus @default(OPEN)
+
+  openedAt  DateTime  @default(now())
+  closedAt  DateTime?
+  updatedAt DateTime  @updatedAt
+
+  avgEntryPrice Decimal @default(0) @db.Decimal(20, 10)
+  netQuantity   Decimal @default(0) @db.Decimal(20, 10)
+  realizedPnL   Decimal @default(0) @db.Decimal(20, 10)
+
+  // Polymarket-specific fields
+  conditionId   String? // Polymarket market condition ID
+  yesTokenId    String? // YES token ID
+  noTokenId     String? // NO token ID
+  marketTitle   String? // denormalized market question
+  currentPrice  Decimal? @db.Decimal(20, 10) // latest probability, updated by sync job
+  unrealizedPnL Decimal? @db.Decimal(20, 10) // computed from currentPrice vs avgEntryPrice
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trades Trade[]
+
+  @@index([userId, marketTicker, side, status])
+  @@index([userId])
+  @@index([marketTicker])
+  @@index([status])
+  @@index([conditionId])
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+  follower    User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+model CopySettings {
+  id String @id @default(uuid())
+
+  followerId String // user who copies
+  leaderId   String // user being copied
+
+  amountPerTrade Float // fixed amount per copied trade
+  maxTotalAmount Float // total cap from this leader
+  usedAmount     Float @default(0) // how much already used
+
+  enabled   Boolean   @default(true)
+  expiresAt DateTime? // optional safety expiry
+
+  delegationSignature String? // wallet signature authorizing Hunch to trade on behalf
+  signedMessage       String? // the message that was signed
+  signedAt            DateTime? // when the signature was created
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  follower User @relation("CopyFollower", fields: [followerId], references: [id], onDelete: Cascade)
+  leader   User @relation("CopyLeader", fields: [leaderId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, leaderId]) // One active config per follower-leader pair
+  @@index([followerId])
+  @@index([leaderId])
+}
+
+model CopyLog {
+  id            String   @id @default(cuid())
+  leaderTradeId String
+  followerId    String
+  copyTradeId   String? // ID of the created follower trade (null if skipped/failed)
+  copyAmount    Float? // Actual amount copied
+  status        String // "pending", "success", "skipped", "failed"
+  skipReason    String? // Reason if skipped (e.g., "limit_exceeded", "disabled")
+  error         String? // Error message if failed
+  createdAt     DateTime @default(now())
+
+  @@unique([leaderTradeId, followerId]) // Idempotency: one copy attempt per leader trade per follower
+  @@index([leaderTradeId])
+  @@index([followerId])
+  @@index([status])
+}
+
+model IndexedEvent {
+  id        String   @id @default(cuid())
+  ticker    String   @unique
+  source    String   @default("manual")
+  createdAt DateTime @default(now())
+
+  @@index([ticker])
+}
+
+model EventEvidence {
+  id               String   @id @default(cuid())
+  eventTicker      String
+  marketTicker     String
+  marketQuestion   String
+  evidenceSentence String
+  highlightScore   Float
+  classification   String
+  headline         String?
+  explanation      String?
+  sourceUrls       String[] // Array of up to 3 URLs
+  sourceTitles     String[] // Array of source titles
+  createdAt        DateTime @default(now())
+
+  @@index([eventTicker])
+  @@index([marketTicker])
+  @@index([createdAt])
+}
+
+// ==============================
+// Feed Item System (Signal-Based Social Feed)
+// ==============================
+
+enum FeedItemType {
+  TRADE_MILESTONE // PnL milestone crossed
+  POSITION_CLOSED // Position fully closed
+  NEWS // High-impact news item
+}
+
+enum MilestoneType {
+  PNL_PLUS_5
+  PNL_PLUS_10
+  PNL_PLUS_20
+  PNL_MINUS_5
+  PNL_MINUS_10
+  POSITION_CLOSED
+}
+
+model FeedItem {
+  id   String       @id @default(cuid())
+  type FeedItemType
+
+  // Core references (at least one must be set)
+  userId     String? // User who triggered this event
+  positionId String? @db.Uuid
+  tradeId    String? // Specific trade that triggered (for closed positions)
+  evidenceId String? // For NEWS type
+
+  // Denormalized data for feed display (avoids JOINs)
+  marketTicker String
+  eventTicker  String?
+  side         String? // "yes" or "no"
+
+  // Milestone context (for TRADE_MILESTONE type)
+  milestoneType  MilestoneType?
+  milestoneValue Float? // The actual PnL% at time of milestone
+
+  // Closed position context (for POSITION_CLOSED type)
+  finalPnL Float? // Realized PnL at close
+
+  // Ranking
+  score Float @default(0) // For feed ranking
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  indexedAt DateTime @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([type])
+  @@index([score, createdAt])
+  @@index([marketTicker])
+  @@index([createdAt])
+}
+
+model Post {
+  id           String   @id @default(cuid())
+  userId       String
+  content      String?
+  postType     String   @default("text")
+  marketTicker String?
+  side         String?
+  positionSize Decimal? @db.Decimal(18, 6)
+  entryPrice   Decimal? @db.Decimal(18, 6)
+  isDeleted    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@index([marketTicker])
+  @@index([postType])
+}
+
+// Tracks which milestones have been recorded for each position
+// The unique constraint prevents duplicate feed items for the same milestone
+model PositionMilestone {
+  id             String        @id @default(cuid())
+  positionId     String        @db.Uuid
+  milestoneType  MilestoneType
+  reachedAt      DateTime      @default(now())
+  pnlAtMilestone Float // Actual PnL% when milestone was reached
+
+  @@unique([positionId, milestoneType]) // CRITICAL: Ensures once-per-position-per-milestone deduplication
+  @@index([positionId])
+}
