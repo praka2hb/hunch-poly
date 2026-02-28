@@ -3,15 +3,15 @@ import { fetchGammaEvents } from '@/app/lib/polymarketGamma';
 
 /**
  * GET /api/polymarket/events
- * 
+ *
  * Fetch paginated events from Polymarket Gamma API.
- * 
+ *
  * Query params:
  *   - limit (default 20)
  *   - offset (default 0)
  *   - active (boolean, default true)
  *   - closed (boolean)
- *   - tag (tag_id for category filtering)
+ *   - tag (tag slug, e.g. "politics", "crypto" — passed as tag_slug to Gamma API)
  *   - search (slug-based search)
  *   - order (sort field: "volume", "liquidity", "start_date")
  *   - ascending (boolean)
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
         const offset = parseInt(sp.get('offset') || '0', 10);
         const active = sp.has('active') ? sp.get('active') === 'true' : true;
         const closed = sp.has('closed') ? sp.get('closed') === 'true' : undefined;
-        const tag_id = sp.get('tag') || undefined;
+        const tag_slug = sp.get('tag') || undefined; // e.g. "politics", "crypto"
         const slug = sp.get('search') || undefined;
         const order = sp.get('order') || undefined;
         const ascending = sp.has('ascending') ? sp.get('ascending') === 'true' : undefined;
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
             offset,
             active,
             closed,
-            tag_id,
+            tag_slug,
             slug,
             order,
             ascending,
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
                 offset,
                 limit,
                 total: events.length,
-                hasMore: events.length === limit, // If we got a full page, there might be more
+                hasMore: events.length === limit,
             },
         }, {
             headers: {

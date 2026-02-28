@@ -163,7 +163,7 @@ export async function fetchGammaEvents(options?: {
   active?: boolean;
   closed?: boolean;
   slug?: string;
-  tag_id?: string;
+  tag_slug?: string;  // e.g. "politics", "crypto", "sports"
   order?: string;       // e.g. "volume", "liquidity", "start_date"
   ascending?: boolean;
 }): Promise<PolyEvent[]> {
@@ -171,7 +171,7 @@ export async function fetchGammaEvents(options?: {
   const offset = options?.offset ?? 0;
 
   const cacheKey = CacheKeys.polyEvents(
-    `${limit}:${offset}:${options?.active ?? ''}:${options?.closed ?? ''}:${options?.slug ?? ''}:${options?.tag_id ?? ''}:${options?.order ?? ''}`
+    `${limit}:${offset}:${options?.active ?? ''}:${options?.closed ?? ''}:${options?.slug ?? ''}:${options?.tag_slug ?? ''}:${options?.order ?? ''}`
   );
 
   // Check Redis cache
@@ -191,7 +191,7 @@ export async function fetchGammaEvents(options?: {
     active: options?.active,
     closed: options?.closed,
     slug: options?.slug,
-    tag_id: options?.tag_id,
+    tag_slug: options?.tag_slug,
     order: options?.order,
     ascending: options?.ascending,
   });
@@ -205,6 +205,7 @@ export async function fetchGammaEvents(options?: {
 
   return events;
 }
+
 
 /**
  * Fetch a single event by slug from Gamma API.
