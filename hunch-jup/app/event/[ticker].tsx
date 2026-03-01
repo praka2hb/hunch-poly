@@ -6,8 +6,8 @@ import { marketsApi } from "@/lib/api";
 import { isNumericOutcomeMarket } from "@/lib/marketUtils";
 import { Event, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
-import { useEmbeddedSolanaWallet } from "@privy-io/expo";
-import { Connection, clusterApiUrl } from "@solana/web3.js";
+import { useEmbeddedEthereumWallet } from "@privy-io/expo";
+
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -29,7 +29,7 @@ const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => voi
   const yesBid = item.yesBid ? parseFloat(item.yesBid) * 100 : null;
   const yesAsk = item.yesAsk ? parseFloat(item.yesAsk) * 100 : null;
   const probability = yesBid && yesAsk ? (yesBid + yesAsk) / 2 : null;
-  const displayTitle = item.yesSubTitle || item.title;
+  const displayTitle = item.side_a?.label || item.title;
   const marketColor = color || Theme.textPrimary;
 
   // Darker versions of market colors for odds text
@@ -100,7 +100,7 @@ const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => voi
 export default function EventDetailScreen() {
   const { ticker } = useLocalSearchParams<{ ticker: string }>();
   const { backendUser } = useUser();
-  const { wallets } = useEmbeddedSolanaWallet();
+  const { wallets } = useEmbeddedEthereumWallet();
   const insets = useSafeAreaInsets();
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
@@ -117,18 +117,15 @@ export default function EventDetailScreen() {
     setHeroImageError(false);
   }, [event?.imageUrl]);
 
-  const connection = useMemo(() => {
-    const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
-    return new Connection(rpcUrl, 'confirmed');
-  }, []);
-  const solanaWallet = wallets?.[0];
+  // EVM wallet — no Solana connection needed
+  const evmWallet = wallets?.[0];
 
   // Get wallet provider
   useEffect(() => {
     const getProvider = async () => {
-      if (solanaWallet) {
+      if (evmWallet) {
         try {
-          const provider = await solanaWallet.getProvider();
+          const provider = await evmWallet.getProvider();
           setWalletProvider(provider);
         } catch (error) {
           console.error('Failed to get wallet provider:', error);
@@ -136,7 +133,7 @@ export default function EventDetailScreen() {
       }
     };
     getProvider();
-  }, [solanaWallet]);
+  }, [evmWallet]);
 
   useEffect(() => {
     if (ticker) {
@@ -184,7 +181,7 @@ export default function EventDetailScreen() {
 
   const topMarketsForCharts = useMemo(() => {
     return top4ByOdds.filter(
-      m => m.yesMint || (m.accounts && Object.values(m.accounts).some(a => a?.yesMint))
+      m => m.condition_id
     );
   }, [top4ByOdds]);
 
@@ -286,9 +283,9 @@ export default function EventDetailScreen() {
               style={StyleSheet.absoluteFillObject}
               pointerEvents="none"
             />
-            {event.competition && (
+            {event.tags && event.tags.length > 0 && (
               <View className="absolute bottom-3 left-4 px-2.5 py-1 rounded-lg bg-black/40">
-                <Text className="text-[11px] font-bold text-white tracking-wide">{event.competition}</Text>
+                <Text className="text-[11px] font-bold text-white tracking-wide">{event.tags[0]}</Text>
               </View>
             )}
           </Animated.View>
@@ -319,10 +316,10 @@ export default function EventDetailScreen() {
             {(() => {
               // Get the earliest close/expiration time from active markets or event
               const marketCloseTimes = activeMarkets
-                .map(m => m.closeTime || m.expirationTime)
+                .map(m => m.close_time)
                 .filter((t): t is number => t != null && t > 0);
 
-              const eventCloseTime = event.closeTime;
+              const eventCloseTime = event.end_time;
               const allCloseTimes = [...marketCloseTimes];
               if (eventCloseTime) allCloseTimes.push(eventCloseTime);
 
@@ -493,7 +490,6 @@ export default function EventDetailScreen() {
         market={selectedMarket}
         backendUser={backendUser || null}
         walletProvider={walletProvider}
-        connection={connection}
         eventTitle={event?.title}
       />
     </View>

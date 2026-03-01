@@ -10,9 +10,9 @@ import { api, getMarketDetails, marketsApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
 import { User as BackendUser, CandleData, Event, EventEvidence, Market, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
-import { useEmbeddedSolanaWallet } from "@privy-io/expo";
+import { useEmbeddedEthereumWallet } from "@privy-io/expo";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clusterApiUrl, Connection } from "@solana/web3.js";
+
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -167,7 +167,7 @@ const FeedCard = ({
 }) => {
     const isYes = item.side === 'yes';
     const market = item.marketDetails;
-    const subtitle = isYes ? market?.yesSubTitle : market?.noSubTitle;
+    const subtitle = isYes ? market?.side_a?.label : market?.side_b?.label;
     const hasQuote = item.quote && item.quote.trim().length > 0;
     const avatarUrl = item.user?.avatarUrl?.replace('_normal', '');
     const totalBought = Number.parseFloat(item.amount || '0');
@@ -333,23 +333,19 @@ const FeedCard = ({
 
 export default function SocialScreen() {
     const { backendUser } = useUser();
-    const { wallets } = useEmbeddedSolanaWallet();
+    const { wallets } = useEmbeddedEthereumWallet();
     const insets = useSafeAreaInsets();
 
-    // Solana connection for trading
-    const connection = useMemo(() => {
-        const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
-        return new Connection(rpcUrl, 'confirmed');
-    }, []);
-    const solanaWallet = wallets?.[0];
+    // EVM wallet for trading
+    const evmWallet = wallets?.[0];
     const [walletProvider, setWalletProvider] = useState<any>(null);
 
     // Get wallet provider
     useEffect(() => {
         const getProvider = async () => {
-            if (solanaWallet) {
+            if (evmWallet) {
                 try {
-                    const provider = await solanaWallet.getProvider();
+                    const provider = await evmWallet.getProvider();
                     setWalletProvider(provider);
                 } catch (e) {
                     console.error('Failed to get wallet provider:', e);
@@ -357,7 +353,7 @@ export default function SocialScreen() {
             }
         };
         getProvider();
-    }, [solanaWallet]);
+    }, [evmWallet]);
 
     const [feedItemsByMode, setFeedItemsByMode] = useState<{ global: FeedItem[]; following: FeedItem[] }>({
         global: [],
@@ -636,16 +632,16 @@ export default function SocialScreen() {
                 (event.markets || []).forEach(market => {
                     const marketTitle = market.title?.toLowerCase() || '';
                     const marketSubtitle = market.subtitle?.toLowerCase() || '';
-                    const yesSubtitle = market.yesSubTitle?.toLowerCase() || '';
-                    const noSubtitle = market.noSubTitle?.toLowerCase() || '';
+                    const yesSubtitle = market.side_a?.label?.toLowerCase() || '';
+                    const noSubtitle = market.side_b?.label?.toLowerCase() || '';
                     const marketMatchesQuery =
                         marketTitle.includes(normalizedQuery) ||
                         marketSubtitle.includes(normalizedQuery) ||
                         yesSubtitle.includes(normalizedQuery) ||
                         noSubtitle.includes(normalizedQuery);
 
-                    if (marketMatchesQuery && !seenMarkets.has(market.ticker)) {
-                        seenMarkets.add(market.ticker);
+                    if (marketMatchesQuery && !seenMarkets.has(market.ticker || market.market_slug)) {
+                        seenMarkets.add(market.ticker || market.market_slug);
                         marketMatches.push({ type: 'market', market, event });
                     }
                 });
@@ -1120,7 +1116,7 @@ export default function SocialScreen() {
                                             <Text className="text-[13px] text-txt-disabled" numberOfLines={1}>
                                                 {entry.item.type === 'event'
                                                     ? (entry.item.event.subtitle || 'Event')
-                                                    : (entry.item.market.subtitle || entry.item.market.yesSubTitle || entry.item.market.noSubTitle || 'Market')}
+                                                    : (entry.item.market.subtitle || entry.item.market.side_a?.label || entry.item.market.side_b?.label || 'Market')}
                                             </Text>
                                             {entry.item.type === 'market' && entry.item.event?.title ? (
                                                 <Text className="text-[11px] text-txt-secondary mt-1" numberOfLines={1}>
@@ -1248,7 +1244,6 @@ export default function SocialScreen() {
                 candles={tradeSheetItem ? candlesMap[tradeSheetItem.marketTicker] : undefined}
                 backendUser={backendUser || null}
                 walletProvider={walletProvider}
-                connection={connection}
                 initialSide={tradeSheetItem?.side}
                 eventTitle={selectedSearchEvent?.title}
             />

@@ -22,22 +22,27 @@ const getActiveMarketsWithImages = (markets: Market[] | undefined): Market[] => 
       return status === "active" || status === "open" || status === "live";
     })
     .filter((m) => {
-      if (typeof m.image_url !== "string") return false;
-      if (!m.image_url.startsWith("http")) return false;
-      if (m.image_url.toLowerCase().includes("kalshi-fallback-images")) return false;
+      // Dome API uses m.image; legacy uses m.image_url
+      const imageUrl = m.image_url || m.image;
+      if (typeof imageUrl !== "string") return false;
+      if (!imageUrl.startsWith("http")) return false;
+      if (imageUrl.toLowerCase().includes("kalshi-fallback-images")) return false;
       return true;
     })
-    .sort((a, b) => (b.volume || 0) - (a.volume || 0));
+    .sort((a, b) => (b.volume || b.volume_total || 0) - (a.volume || a.volume_total || 0));
 };
+
+
+
 
 const getVolumeTrend = (event: Event): "up" | "down" => {
   const volumeAll = event.volume ?? 0;
-  const volume24h = event.volume24h ?? 0;
+  const volumeFiat = event.volume_fiat_amount ?? 0;
 
-  if (volume24h <= 0) return "down";
+  if (volumeFiat <= 0) return "down";
   if (volumeAll <= 0) return "up";
 
-  const ratio = volume24h / volumeAll;
+  const ratio = volumeFiat / volumeAll;
   return ratio >= 0.1 ? "up" : "down";
 };
 
@@ -50,10 +55,12 @@ const formatCompactNumber = (value: number | undefined | null): string => {
 
 export function EventMarketImageCarousel({ items, isLoadingMore = false }: EventMarketImageCarouselProps) {
   // Filter events to only show those with at least 2 market images or an event image
-  const filteredItems = items.filter((item) => {
-    const marketsWithImages = getActiveMarketsWithImages(item.markets);
-    return marketsWithImages.length >= 2 || !!item.imageUrl;
-  });
+  const filteredItems = items
+    .filter((item) => {
+      const marketsWithImages = getActiveMarketsWithImages(item.markets);
+      return marketsWithImages.length >= 2 || !!item.imageUrl;
+    })
+    .filter((item, index, arr) => arr.findIndex(x => x.ticker === item.ticker) === index);
 
   const renderItem = ({ item }: { item: Event }) => {
     const marketsWithImages = getActiveMarketsWithImages(item.markets);
@@ -61,7 +68,7 @@ export function EventMarketImageCarousel({ items, isLoadingMore = false }: Event
     const topImages = marketsWithImages.slice(0, 4);
     const volumeTrend = getVolumeTrend(item);
     const isUp = volumeTrend === "up";
-    const primaryVolume = item.volume24h ?? item.volume ?? 0;
+    const primaryVolume = item.volume_fiat_amount ?? item.volume ?? 0;
 
     return (
       <TouchableOpacity
@@ -69,7 +76,7 @@ export function EventMarketImageCarousel({ items, isLoadingMore = false }: Event
         style={{ width: CARD_WIDTH, height: "100%" }}
         activeOpacity={0.8}
         onPress={() =>
-          router.push({ pathname: "/event/[ticker]", params: { ticker: item.ticker } })
+          router.push({ pathname: "/event/[ticker]", params: { ticker: item.ticker ?? item.event_slug } })
         }
       >
         <View style={{ flex: 1, justifyContent: "space-between" }}>
@@ -185,7 +192,7 @@ export function EventMarketImageCarousel({ items, isLoadingMore = false }: Event
     <View className="pt-4 mb-4" style={{ height: CARD_MIN_HEIGHT + 24 }}>
       <FlatList
         data={filteredItems}
-        keyExtractor={(item) => item.ticker}
+        keyExtractor={(item) => item.ticker ?? item.event_slug}
         renderItem={renderItem}
         horizontal
         showsHorizontalScrollIndicator={false}

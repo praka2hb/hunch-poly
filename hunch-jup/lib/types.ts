@@ -191,86 +191,112 @@ export interface AuthError {
 
 // Delegation Status Types (for copy trading)
 export interface DelegationStatus {
-    hasValidDelegation: boolean;
-    signedAt: string | null;
+    hasClobCredentials: boolean;
+    walletAddress: string | null;
 }
 
-// Markets API Types (DFlow External API)
+// ─── Polymarket API Types ────────────────────────────────────────────────────
+
+// A side (outcome) of a binary market
+export interface MarketSide {
+    id: string;   // token ID for CLOB trading
+    label: string; // e.g. "Yes", "No", "Up", "Down"
+}
+
 export interface Market {
-    marketId?: string;
-    ticker: string;
-    seriesTicker?: string;
+    // Identifiers
+    market_slug: string;
+    event_slug?: string;
+    condition_id: string;
+    // Display
     title: string;
-    subtitle?: string;
-    status: string; // 'active', 'finalized', 'resolved', 'closed'
-    eventId?: string;
+    description?: string;
+    image?: string;
+    tags?: string[];
+    // Timing
+    start_time?: number;
+    end_time?: number;
+    completed_time?: number | null;
+    close_time?: number | null;
+    game_start_time?: string | null;
+    // Volume
+    volume_1_week?: number;
+    volume_1_month?: number;
+    volume_1_year?: number;
+    volume_total?: number;
+    // Outcomes
+    side_a: MarketSide;
+    side_b: MarketSide;
+    winning_side?: string | null;
+    // Status
+    status: string; // "open" | "closed" | "resolved"
+    resolution_source?: string;
+    negative_risk_id?: string | null;
+    extra_fields?: Record<string, any>;
+
+    // ── Convenience aliases (populated by mappers) ──
+    /** @deprecated Use market_slug */
+    ticker?: string;
+    /** @deprecated Use event_slug */
     eventTicker?: string;
-    marketType?: string;
-    yesSubTitle?: string;
-    noSubTitle?: string;
-    openTime?: number;
-    closeTime?: number;
-    expirationTime?: number;
-    volume?: number;
-    openInterest?: number;
-    result?: string;
-    canCloseEarly?: boolean;
-    earlyCloseCondition?: string;
-    rulesPrimary?: string;
-    rulesSecondary?: string;
+    subtitle?: string;
     yesBid?: string | null;
     yesAsk?: string | null;
     noBid?: string | null;
     noAsk?: string | null;
-    yesMint?: string;
-    noMint?: string;
-    colorCode?: string;
-    accounts?: {
-        [key: string]: {
-            marketLedger?: string;
-            yesMint?: string;
-            noMint?: string;
-            isInitialized?: boolean;
-            redemptionStatus?: string | null;
-        };
-    };
     image_url?: string;
-}
-
-export interface SettlementSource {
-    name: string;
-    url: string;
+    volume?: number;
+    colorCode?: string;
 }
 
 export interface Event {
-    eventId?: string;
-    ticker: string;
-    seriesTicker?: string;
+    // Identifiers
+    event_slug: string;
+    // Display
     title: string;
     subtitle?: string;
-    category?: string;
-    isLive?: boolean;
-    imageUrl?: string;
-    competition?: string;
-    competitionScope?: string;
-    strikeDate?: number | null;
-    strikePeriod?: string | null;
-    volume?: number;
-    volume24h?: number;
-    liquidity?: number;
-    openInterest?: number;
-    closeTime?: number;
-    settlementSources?: SettlementSource[] | any;
+    image?: string;
+    tags?: string[];
+    // Timing
+    start_time?: number;
+    end_time?: number;
+    // Volume
+    volume_fiat_amount?: number;
+    // Status
+    status?: string; // "open" | "closed"
+    // Markets
+    market_count?: number;
     markets?: Market[];
+    // Metadata
+    settlement_sources?: string;
+    rules_url?: string | null;
+
+    // ── Convenience aliases (populated by mappers) ──
+    /** @deprecated Use event_slug */
+    ticker?: string;
+    imageUrl?: string;
+    category?: string;
+    volume?: number;
+    closeTime?: number;
 }
 
 export interface MarketsResponse {
     markets: Market[];
+    pagination?: {
+        limit: number;
+        total?: number;
+        has_more: boolean;
+        pagination_key?: string;
+    };
 }
 
 export interface EventsResponse {
     events: Event[];
-    cursor?: number;
+    pagination?: {
+        limit: number;
+        has_more: boolean;
+        pagination_key?: string;
+    };
 }
 
 // Candlestick chart data types
@@ -289,28 +315,10 @@ export interface CandlesResponse {
     resolution: string;
 }
 
-export interface DFlowCandlePricePoint {
-    close: number | null;
-    high: number | null;
-    low: number | null;
-    open: number | null;
-    previous?: number | null;
-}
-
-export interface DFlowCandlestick {
-    end_period_ts: number;
-    price?: DFlowCandlePricePoint | null;
-    volume?: number | null;
-}
-
-export interface DFlowCandlesticksResponse {
-    candlesticks: DFlowCandlestick[];
-    ticker: string;
-}
-
-export interface CandlesticksByMintResponse {
-    candlesticks: CandleData[];
-    ticker: string;
+// Price history point from Polymarket
+export interface PriceHistoryPoint {
+    t: number;  // timestamp
+    p: number;  // price
 }
 
 // Event Evidence Types (News/Signals)
@@ -324,7 +332,7 @@ export interface EventEvidence {
     classification: 'CONFIRMATION' | 'REQUIREMENT' | 'DELAY' | 'RISK' | 'NONE';
     headline?: string | null;
     explanation?: string | null;
-    sourceUrls: string[];  // Array of source URLs
+    sourceUrls: string[];
     sourceTitle?: string | null;
     sourcePublishedAt?: string | null;
     createdAt: string;
@@ -352,30 +360,31 @@ export interface SeriesResponse {
     series: Series[];
 }
 
-// User Positions from /api/users/:userId/positions
+// User Positions from /api/polymarket/positions
 export interface UserPosition {
-    marketTicker: string;
-    side: 'yes' | 'no';
-    netSize: number;
-    avgEntryPrice: number;
-    tradeCount: number;
-    lastTradedAt: string;
-    marketTitle: string;
-    marketSubtitle: string;
-    imageUrl: string | null;
-    colorCode: string | null;
+    conditionId: string;
+    tokenId: string;
+    outcome: string;
+    size: number;
+    avgPrice: number;
     currentPrice: number | null;
-    enteredAmount: number;
+    pnl: number | null;
     realizedPnl: number | null;
     unrealizedPnl: number | null;
-    totalPnl: number | null;
-    pnlPercent: number | null;
-    isClosed: boolean;
+    redeemed: boolean;
+    market?: {
+        conditionId: string;
+        question: string;
+        slug: string;
+        image: string;
+        active: boolean;
+    } | null;
 }
 
 export interface UserPositionsResponse {
     positions: UserPosition[];
-    previousPositions: UserPosition[];
+    walletAddress: string;
+    total: number;
 }
 
 // Post Types
@@ -407,33 +416,3 @@ export interface CreatePostRequest {
     entryPrice?: number;
 }
 
-// Jupiter prediction API response types
-export interface JupiterPredictionEventListResponse {
-    data: any[];
-    pagination?: {
-        start: number;
-        end: number;
-        total: number;
-        hasNext: boolean;
-    };
-}
-
-export interface JupiterPredictionOrderResponse {
-    transaction: string | null;
-    txMeta: {
-        blockhash: string;
-        lastValidBlockHeight: number;
-    } | null;
-    externalOrderId: string | null;
-    order: {
-        orderPubkey?: string;
-        positionPubkey?: string;
-        marketId: string;
-        isBuy: boolean;
-        isYes: boolean;
-        contracts?: string;
-        newContracts?: string;
-        orderCostUsd?: string;
-        newSizeUsd?: string;
-    };
-}

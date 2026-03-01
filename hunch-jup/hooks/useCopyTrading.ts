@@ -1,6 +1,6 @@
 import { api } from '@/lib/api';
 import { AuthError, CopySettings, DelegationStatus } from '@/lib/types';
-import { useEmbeddedSolanaWallet, usePrivy, useSessionSigners } from '@privy-io/expo';
+import { useEmbeddedEthereumWallet, usePrivy, useSessionSigners } from '@privy-io/expo';
 import { useCallback, useState } from 'react';
 
 // Key Quorum ID from environment
@@ -58,7 +58,7 @@ Timestamp: ${timestamp}`;
  */
 export function useCopyTrading(): UseCopyTradingReturn {
     const { user } = usePrivy();
-    const { wallets } = useEmbeddedSolanaWallet();
+    const { wallets } = useEmbeddedEthereumWallet();
 
     const [isLoading, setIsLoading] = useState(false);
     const [isSigningDelegation, setIsSigningDelegation] = useState(false);
@@ -209,12 +209,12 @@ export function useCopyTrading(): UseCopyTradingReturn {
             const walletHasSigner = hasExistingSigner(walletAddress);
 
             console.log('[CopyTrading] Status check:', {
-                hasValidDelegation: status.hasValidDelegation,
+                hasClobCredentials: status.hasClobCredentials,
                 walletHasSigner,
             });
 
             // Step 2: Determine flow
-            if (status.hasValidDelegation && walletHasSigner) {
+            if (status.hasClobCredentials && walletHasSigner) {
                 // FAST PATH - No signature needed, just save settings
                 console.log('[CopyTrading] Fast path - saving settings directly');
 

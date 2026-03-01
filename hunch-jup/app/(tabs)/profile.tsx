@@ -13,9 +13,9 @@ import { api, getEventDetails, marketsApi } from "@/lib/api";
 import { executeTrade, toRawAmount } from "@/lib/tradeService";
 import { AggregatedPosition, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
-import { useEmbeddedSolanaWallet, usePrivy } from "@privy-io/expo";
-import { useFundSolanaWallet } from "@privy-io/expo/ui";
-import { clusterApiUrl, Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { useEmbeddedEthereumWallet, usePrivy } from "@privy-io/expo";
+import { useFundWallet } from "@privy-io/expo/ui";
+
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -44,10 +44,10 @@ const formatPercent = (value: number | null | undefined) => {
 export default function ProfileScreen() {
     const { user, logout } = usePrivy();
     const { backendUser, setBackendUser } = useUser();
-    const { wallets } = useEmbeddedSolanaWallet();
-    const solanaWallet = wallets?.[0];
+    const { wallets } = useEmbeddedEthereumWallet();
+    const evmWallet = wallets?.[0];
     const router = useRouter();
-    const { fundWallet } = useFundSolanaWallet();
+    const { fundWallet } = useFundWallet();
     const [profileData, setProfileData] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [trades, setTrades] = useState<Trade[]>([]);
@@ -85,9 +85,9 @@ export default function ProfileScreen() {
     // Get wallet provider
     useEffect(() => {
         const getProvider = async () => {
-            if (solanaWallet) {
+            if (evmWallet) {
                 try {
-                    const provider = await solanaWallet.getProvider();
+                    const provider = await evmWallet.getProvider();
                     setWalletProvider(provider);
                 } catch (e) {
                     console.error('Failed to get wallet provider:', e);
@@ -95,7 +95,7 @@ export default function ProfileScreen() {
             }
         };
         getProvider();
-    }, [solanaWallet]);
+    }, [evmWallet]);
 
     // Copy trading data
     const { copySettings, fetchAllCopySettings, disableCopyTrading, isLoading: copySettingsLoading } = useCopyTrading();
@@ -171,11 +171,8 @@ export default function ProfileScreen() {
     const pulseAnim = useRef(new Animated.Value(0.6)).current;
     const indicatorAnim = useRef(new Animated.Value(0)).current;
 
-    // Solana connection for trading
-    const connection = useMemo(() => {
-        const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
-        return new Connection(rpcUrl, 'confirmed');
-    }, []);
+    // EVM wallet — no Solana connection needed
+    // TODO: Replace with Polygon/EVM provider when trading is fully migrated
 
 
     const paneWidth = SCREEN_WIDTH - 40;
@@ -296,26 +293,9 @@ export default function ProfileScreen() {
     const walletAddress = profileData?.walletAddress || backendUser?.walletAddress;
 
     const loadSolBalance = useCallback(async () => {
-        if (!walletAddress) {
-            setSolBalance(null);
-            setSolUsdPrice(null);
-            return;
-        }
-        try {
-            const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
-            const connection = new Connection(rpcUrl, 'confirmed');
-            const [lamports, priceResponse] = await Promise.all([
-                connection.getBalance(new PublicKey(walletAddress)),
-                fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'),
-            ]);
-            const priceJson = await priceResponse.json();
-            setSolBalance(lamports / LAMPORTS_PER_SOL);
-            setSolUsdPrice(Number(priceJson?.solana?.usd) || null);
-        } catch (error) {
-            console.error("Failed to load SOL balance:", error);
-            setSolBalance(null);
-            setSolUsdPrice(null);
-        }
+        // SOL balance no longer relevant — Polygon wallet uses MATIC/USDC
+        setSolBalance(null);
+        setSolUsdPrice(null);
     }, [walletAddress]);
 
     const loadUsdcBalance = useCallback(async () => {
@@ -324,18 +304,8 @@ export default function ProfileScreen() {
             return;
         }
         try {
-            const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
-            const connection = new Connection(rpcUrl, 'confirmed');
-            const usdcMint = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
-            const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-                new PublicKey(walletAddress),
-                { mint: usdcMint }
-            );
-            const totalBalance = tokenAccounts.value.reduce((sum, accountInfo) => {
-                const amount = accountInfo.account.data?.parsed?.info?.tokenAmount?.uiAmount;
-                return sum + (typeof amount === 'number' ? amount : 0);
-            }, 0);
-            setUsdcBalance(totalBalance);
+            // TODO: Implement EVM/Polygon USDC balance check
+            setUsdcBalance(null);
         } catch (error) {
             console.error("Failed to load USDC balance:", error);
             setUsdcBalance(null);
@@ -356,7 +326,7 @@ export default function ProfileScreen() {
                 tickers.forEach((t, i) => { if (events[i]?.title) next[t] = events[i].title; });
                 setEventTitleByTicker((prev) => ({ ...prev, ...next }));
             })
-            .catch(() => {});
+            .catch(() => { });
         return () => { cancelled = true; };
     }, [activePositions, previousPositions]);
 
@@ -416,7 +386,7 @@ export default function ProfileScreen() {
 
     // Handle sell trade execution - sells all tokens for this position
     const handleSell = async () => {
-        if (!selectedPosition || !backendUser || !solanaWallet) {
+        if (!selectedPosition || !backendUser || !evmWallet) {
             throw new Error('Missing required data for sell');
         }
 
@@ -445,12 +415,11 @@ export default function ProfileScreen() {
             const rawAmount = toRawAmount(tokensToSell, 6);
 
             // Get wallet provider
-            const provider = await solanaWallet.getProvider();
+            const provider = await evmWallet.getProvider();
 
             // Execute the sell trade
             const { signature, order } = await executeTrade({
                 provider,
-                connection,
                 userPublicKey: backendUser.walletAddress,
                 amount: rawAmount,
                 marketId: selectedPosition.marketTicker,
@@ -577,7 +546,7 @@ export default function ProfileScreen() {
                                         className="flex-row ml-20 items-center gap-1.5 px-3.5 py-[7px]  rounded-md  bg-slate-200 "
                                         onPress={() => {
                                             if (backendUser?.walletAddress) {
-                                                fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
+                                                fundWallet({ address: backendUser.walletAddress });
                                             }
                                         }}
                                     >
@@ -629,9 +598,8 @@ export default function ProfileScreen() {
                                 tradesCount={trades.length}
                                 balance={cashBalance}
                                 walletAddress={walletAddress || ""}
-                                wallet={solanaWallet}
+                                wallet={evmWallet}
                                 walletProvider={walletProvider}
-                                connection={connection}
                                 onWithdrawSuccess={(amount) => {
                                     // Optimistic update — instant balance feedback
                                     setUsdcBalance(prev => Math.max(0, (prev ?? 0) - amount));
@@ -945,7 +913,6 @@ export default function ProfileScreen() {
                 market={selectedMarket}
                 backendUser={backendUser || null}
                 walletProvider={walletProvider}
-                connection={connection}
                 eventTitle={selectedMarketEventTitle}
             />
         </View >

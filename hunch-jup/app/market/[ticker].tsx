@@ -7,8 +7,8 @@ import { api, marketsApi } from "@/lib/api";
 import { executeTrade, toRawAmount } from "@/lib/tradeService";
 import { Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
-import { useEmbeddedSolanaWallet } from "@privy-io/expo";
-import { Connection, clusterApiUrl } from "@solana/web3.js";
+import { useEmbeddedEthereumWallet } from "@privy-io/expo";
+
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -19,7 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function MarketDetailScreen() {
   const { ticker } = useLocalSearchParams<{ ticker: string }>();
   const { backendUser } = useUser();
-  const { wallets } = useEmbeddedSolanaWallet();
+  const { wallets } = useEmbeddedEthereumWallet();
   const [market, setMarket] = useState<Market | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,13 +31,8 @@ export default function MarketDetailScreen() {
   const [showQuoteSheet, setShowQuoteSheet] = useState(false);
   const [lastTradeId, setLastTradeId] = useState<string | null>(null);
 
-  // Get Solana connection and wallet provider
-  const connection = useMemo(() => {
-    const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
-    return new Connection(rpcUrl, 'confirmed');
-  }, []);
-
-  const solanaWallet = wallets?.[0];
+  // EVM wallet — no Solana connection needed
+  const evmWallet = wallets?.[0];
 
   useEffect(() => {
     if (ticker) loadMarketDetails();
@@ -59,7 +54,7 @@ export default function MarketDetailScreen() {
 
   const handleTrade = async () => {
     if (!market || !backendUser || !amount || parseFloat(amount) <= 0) return;
-    if (!solanaWallet) {
+    if (!evmWallet) {
       setTradeError("Wallet not connected");
       return;
     }
@@ -79,12 +74,11 @@ export default function MarketDetailScreen() {
       const rawAmount = toRawAmount(parseFloat(amount), 6);
 
       // Get wallet provider
-      const provider = await solanaWallet.getProvider();
+      const provider = await evmWallet.getProvider();
 
       // Execute the trade: get quote, sign, send, wait for confirmation
       const { signature, order } = await executeTrade({
         provider,
-        connection,
         userPublicKey: backendUser.walletAddress,
         amount: rawAmount,
         marketId: market.ticker,
@@ -227,16 +221,16 @@ export default function MarketDetailScreen() {
               </View>
             </View>
             <Text className="text-2xl font-bold text-txt-primary mb-2.5 leading-8">{market.title}</Text>
-            {market.yesSubTitle && (
+            {market.side_a?.label && (
               <Text className="text-sm text-txt-secondary mb-2.5">
-                <Text className="font-bold text-status-success">Yes</Text> = {market.yesSubTitle}
+                <Text className="font-bold text-status-success">Yes</Text> = {market.side_a.label}
               </Text>
             )}
-            {market.closeTime && (
+            {market.close_time && (
               <View className="flex-row items-center gap-1.5">
                 <Ionicons name="time-outline" size={14} color={Theme.textDisabled} />
                 <Text className="text-[13px] text-txt-disabled">
-                  Closes {new Date(market.closeTime * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  Closes {new Date(market.close_time * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </Text>
               </View>
             )}
@@ -386,17 +380,17 @@ export default function MarketDetailScreen() {
                 <Text className="text-txt-disabled text-[11px] font-semibold uppercase tracking-wide mb-1">Volume</Text>
                 <Text className="text-txt-primary text-sm font-semibold">${((market.volume || 0) / 1000).toFixed(1)}K</Text>
               </View>
-              {market.openInterest && (
+              {market.description && (
                 <View className="bg-app-elevated rounded-[10px] p-3 min-w-[30%] flex-1">
-                  <Text className="text-txt-disabled text-[11px] font-semibold uppercase tracking-wide mb-1">Open Interest</Text>
-                  <Text className="text-txt-primary text-sm font-semibold">${(market.openInterest / 1000).toFixed(1)}K</Text>
+                  <Text className="text-txt-disabled text-[11px] font-semibold uppercase tracking-wide mb-1">Liquidity</Text>
+                  <Text className="text-txt-primary text-sm font-semibold">—</Text>
                 </View>
               )}
             </View>
-            {market.rulesPrimary && (
+            {market.description && (
               <View className="pt-3.5 border-t border-border">
                 <Text className="text-txt-secondary text-xs font-semibold mb-2">Rules</Text>
-                <Text className="text-txt-primary text-[13px] leading-5">{market.rulesPrimary}</Text>
+                <Text className="text-txt-primary text-[13px] leading-5">{market.description}</Text>
               </View>
             )}
           </View>

@@ -29,7 +29,7 @@ export function EventCarousel({ items }: EventCarouselProps) {
         className="w-[220px] mr-3 bg-app-card rounded-xl overflow-hidden"
         activeOpacity={0.7}
         onPress={() =>
-          router.push({ pathname: "/event/[ticker]", params: { ticker: item.ticker } })
+          router.push({ pathname: "/event/[ticker]", params: { ticker: item.ticker ?? item.event_slug } })
         }
       >
         {item.imageUrl ? (
@@ -57,7 +57,7 @@ export function EventCarousel({ items }: EventCarouselProps) {
                 className="text-[12px] text-txt-secondary flex-1 mr-2"
                 numberOfLines={1}
               >
-                {topMarket.yesSubTitle || topMarket.title}
+                {topMarket.subtitle || topMarket.title}
               </Text>
               <Text className="text-[12px] font-bold text-txt-primary">
                 {formatPercent(topMarket.yesBid)}
@@ -77,8 +77,8 @@ export function EventCarousel({ items }: EventCarouselProps) {
         </Text>
       </View>
       <FlatList
-        data={items}
-        keyExtractor={(item) => item.ticker}
+        data={items.filter((item, index, arr) => arr.findIndex(x => (x.ticker ?? x.event_slug) === (item.ticker ?? item.event_slug)) === index)}
+        keyExtractor={(item) => item.ticker ?? item.event_slug}
         renderItem={renderEventItem}
         horizontal
         showsHorizontalScrollIndicator={false}

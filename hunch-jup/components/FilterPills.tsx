@@ -3,8 +3,14 @@ import * as Haptics from 'expo-haptics';
 import { useCallback, useRef } from 'react';
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+interface Category {
+    id: string;
+    slug: string;
+    label: string;
+}
+
 interface FilterPillsProps {
-    categories: string[];
+    categories: Category[];
     selectedCategory: string;
     onCategoryChange: (category: string) => void;
     preferredCategories?: string[];
@@ -14,18 +20,19 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange, pr
     const flatListRef = useRef<FlatList>(null);
 
     // Sort categories to show preferred ones first
+    // Sort categories to show preferred ones first based on slug
     const sortedCategories = [...categories].sort((a, b) => {
-        const aIsPreferred = preferredCategories.includes(a);
-        const bIsPreferred = preferredCategories.includes(b);
+        const aIsPreferred = preferredCategories.includes(a.slug);
+        const bIsPreferred = preferredCategories.includes(b.slug);
         if (aIsPreferred && !bIsPreferred) return -1;
         if (!aIsPreferred && bIsPreferred) return 1;
         return 0;
     });
 
-    const handlePress = useCallback((category: string, index: number) => {
-        if (category !== selectedCategory) {
+    const handlePress = useCallback((categorySlug: string, index: number) => {
+        if (categorySlug !== selectedCategory) {
             Haptics.selectionAsync();
-            onCategoryChange(category);
+            onCategoryChange(categorySlug);
             // Scroll to make selected pill visible
             flatListRef.current?.scrollToIndex({
                 index,
@@ -35,17 +42,14 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange, pr
         }
     }, [selectedCategory, onCategoryChange]);
 
-    const renderPill = useCallback(({ item, index }: { item: string; index: number }) => {
-        const isSelected = item === selectedCategory;
-        // Show only the first word to avoid long labels
-        const rawLabel = item === 'all' ? 'hot' : item.split(' ')[0];
-        const label =
-            rawLabel.length > 0
-                ? rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1).toLowerCase()
-                : '';
+    const renderPill = useCallback(({ item, index }: { item: Category; index: number }) => {
+        const isSelected = item.slug === selectedCategory;
+        // The API returns 'All' instead of 'all', but we want 'Hot' for the default feed
+        const displayLabel = item.slug === 'all' ? 'Hot' : item.label;
+
         return (
             <TouchableOpacity
-                onPress={() => handlePress(item, index)}
+                onPress={() => handlePress(item.slug, index)}
                 activeOpacity={0.7}
                 style={[
                     styles.pill,
@@ -58,7 +62,7 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange, pr
                         isSelected ? styles.pillTextSelected : styles.pillTextUnselected,
                     ]}
                 >
-                    {label}
+                    {displayLabel}
                 </Text>
             </TouchableOpacity>
         );
@@ -70,7 +74,7 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange, pr
                 ref={flatListRef}
                 horizontal
                 data={sortedCategories}
-                keyExtractor={(item) => item}
+                keyExtractor={(item) => item.slug}
                 renderItem={renderPill}
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.contentContainer}

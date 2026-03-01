@@ -1,7 +1,19 @@
-// Trade service for Jupiter prediction order integration via backend.
-// Handles order requests, transaction signing, and send/confirm flow.
+// Trade service — transitional. Solana imports kept for compatibility but
+// connection is optional everywhere since we're migrating to EVM/Polygon.
+// TODO: Full EVM rewrite with EIP-712 signing once Polymarket CLOB trading is implemented.
 
-import { clusterApiUrl, Connection, VersionedTransaction } from '@solana/web3.js';
+let Connection: any;
+let VersionedTransaction: any;
+let clusterApiUrl: any;
+try {
+    const solana = require('@solana/web3.js');
+    Connection = solana.Connection;
+    VersionedTransaction = solana.VersionedTransaction;
+    clusterApiUrl = solana.clusterApiUrl;
+} catch {
+    // @solana/web3.js not available — EVM-only mode
+    console.warn('[TradeService] @solana/web3.js not available — Solana trading disabled');
+}
 import { authenticatedFetch } from './api';
 
 // Constants
@@ -213,7 +225,7 @@ export async function waitForOrderCompletion(
  * Deserialize a base64 transaction from the backend
  * The transaction is ALREADY sponsor-signed by the backend
  */
-export function deserializeTransaction(base64Transaction: string): VersionedTransaction {
+export function deserializeTransaction(base64Transaction: string): any {
     console.log('[TradeService] Deserializing sponsor-signed tx, base64 length:', base64Transaction.length);
 
     // Decode base64 to bytes
@@ -231,7 +243,7 @@ export function deserializeTransaction(base64Transaction: string): VersionedTran
 
     // Verify sponsor signature exists (should be non-zero)
     const sponsorSig = tx.signatures[0];
-    const hasValidSponsorSig = sponsorSig && !sponsorSig.every(b => b === 0);
+    const hasValidSponsorSig = sponsorSig && !sponsorSig.every((b: any) => b === 0);
     console.log('[TradeService] Sponsor signature present:', hasValidSponsorSig);
 
     if (!hasValidSponsorSig) {
@@ -258,15 +270,15 @@ export function deserializeTransaction(base64Transaction: string): VersionedTran
  */
 export async function signAndSendWithPrivy(
     provider: any,
-    transaction: VersionedTransaction,
-    connection: Connection
+    transaction: any,
+    connection?: any
 ): Promise<string> {
     console.log('[TradeService] Starting user sign flow...');
 
     // Log pre-signing signature state
-    const preSigs = transaction.signatures.map((s, i) => ({
+    const preSigs = transaction.signatures.map((s: any, i: number) => ({
         index: i,
-        hasSignature: s && !s.every(b => b === 0),
+        hasSignature: s && !s.every((b: any) => b === 0),
         preview: Buffer.from(s.slice(0, 8)).toString('hex'),
     }));
     console.log('[TradeService] Signatures before user sign:', preSigs);
@@ -274,7 +286,7 @@ export async function signAndSendWithPrivy(
     // 1. Ask Privy to JUST SIGN the transaction (not send)
     // CRITICAL: Use signTransaction, NOT signAndSendTransaction
     // This returns a transaction with the user's signature added
-    let signedTransaction: VersionedTransaction;
+    let signedTransaction: any;
     try {
         const response = await provider.request({
             method: 'signTransaction',
@@ -374,7 +386,7 @@ export async function signAndSendWithPrivy(
  */
 export async function executeTrade(params: {
     provider: any;
-    connection: Connection;
+    connection?: any;
     userPublicKey: string;
     amount: string;
     marketId: string;
@@ -522,7 +534,7 @@ export async function sendUSDC({
 }: {
     provider: any;
     wallet?: any;
-    connection: Connection;
+    connection?: any;
     fromAddress: string;
     toAddress: string;
     amount: number;
@@ -560,7 +572,7 @@ export async function sendUSDC({
     console.log('[TradeService] Unsigned tx decoded, submitting via Privy with options.sponsor: true...');
 
     // Step 3: Privy acts as fee payer + user signs + Privy broadcasts
-    const sendWithConnection = async (conn: Connection) =>
+    const sendWithConnection = async (conn: any) =>
         provider.request({
             method: 'signAndSendTransaction',
             params: {

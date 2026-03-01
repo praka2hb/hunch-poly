@@ -13,8 +13,8 @@ import { api, getEventDetails, getMarketDetails, marketsApi } from "@/lib/api";
 import { executeTrade, sendUSDC, toRawAmount } from "@/lib/tradeService";
 import { AggregatedPosition, CandleData, Event, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
-import { useEmbeddedSolanaWallet } from "@privy-io/expo";
-import { clusterApiUrl, Connection, PublicKey } from "@solana/web3.js";
+import { useEmbeddedEthereumWallet } from "@privy-io/expo";
+
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -223,9 +223,9 @@ const TradeItem = ({
                             </View>
                         </View>
 
-                        {(trade.side === 'yes' ? market.yesSubTitle : market.noSubTitle) ? (
+                        {(trade.side === 'yes' ? market.side_a?.label : market.side_b?.label) ? (
                             <Text className="text-sm italic text-txt-secondary mt-1" numberOfLines={1}>
-                                on {trade.side === 'yes' ? market.yesSubTitle : market.noSubTitle}
+                                on {trade.side === 'yes' ? market.side_a?.label : market.side_b?.label}
                             </Text>
                         ) : null}
 
@@ -283,7 +283,7 @@ const sendBtnStyle = StyleSheet.create({
 export default function UserProfileScreen() {
     const { userId } = useLocalSearchParams<{ userId: string }>();
     const { backendUser: currentUser } = useUser();
-    const { wallets } = useEmbeddedSolanaWallet();
+    const { wallets } = useEmbeddedEthereumWallet();
     const insets = useSafeAreaInsets();
 
     const [profile, setProfile] = useState<User | null>(null);
@@ -424,20 +424,15 @@ export default function UserProfileScreen() {
     const loadedEventTickers = useRef(new Set<string>());
     const loadedCandleTickers = useRef(new Set<string>());
 
-    // Solana connection for trading
-    const connection = useMemo(() => {
-        const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
-        return new Connection(rpcUrl, 'confirmed');
-    }, []);
-
-    const solanaWallet = wallets?.[0];
+    // EVM wallet — no Solana connection needed
+    const evmWallet = wallets?.[0];
 
     // Get wallet provider
     useEffect(() => {
         const getProvider = async () => {
-            if (solanaWallet) {
+            if (evmWallet) {
                 try {
-                    const provider = await solanaWallet.getProvider();
+                    const provider = await evmWallet.getProvider();
                     setWalletProvider(provider);
                 } catch (e) {
                     console.error('Failed to get wallet provider:', e);
@@ -445,7 +440,7 @@ export default function UserProfileScreen() {
             }
         };
         getProvider();
-    }, [solanaWallet]);
+    }, [evmWallet]);
 
     const animateToTab = useCallback((tab: TabType) => {
         Animated.spring(slideAnim, {
@@ -494,18 +489,8 @@ export default function UserProfileScreen() {
             return;
         }
         try {
-            const rpcUrl = process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl('mainnet-beta');
-            const conn = new Connection(rpcUrl, 'confirmed');
-            const usdcMint = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
-            const tokenAccounts = await conn.getParsedTokenAccountsByOwner(
-                new PublicKey(currentUser.walletAddress),
-                { mint: usdcMint }
-            );
-            const totalBalance = tokenAccounts.value.reduce((sum, accountInfo) => {
-                const amount = accountInfo.account.data?.parsed?.info?.tokenAmount?.uiAmount;
-                return sum + (typeof amount === 'number' ? amount : 0);
-            }, 0);
-            setUsdcBalance(totalBalance);
+            // TODO: Implement EVM/Polygon USDC balance check
+            setUsdcBalance(0);
         } catch (error) {
             console.error("Failed to load USDC balance:", error);
             setUsdcBalance(0);
@@ -660,7 +645,7 @@ export default function UserProfileScreen() {
 
     // Handle sell trade execution - sells all tokens for this position
     const handleSell = async () => {
-        if (!selectedPosition || !currentUser || !solanaWallet) {
+        if (!selectedPosition || !currentUser || !evmWallet) {
             throw new Error('Missing required data for sell');
         }
 
@@ -686,11 +671,10 @@ export default function UserProfileScreen() {
             });
 
             const rawAmount = toRawAmount(tokensToSell, 6);
-            const provider = await solanaWallet.getProvider();
+            const provider = await evmWallet.getProvider();
 
             const { signature, order } = await executeTrade({
                 provider,
-                connection,
                 userPublicKey: currentUser.walletAddress,
                 amount: rawAmount,
                 marketId: selectedPosition.marketTicker,
@@ -779,7 +763,7 @@ export default function UserProfileScreen() {
             .filter((trade) => trade.marketDetails?.status === 'active')
             .map((trade) => ({
                 marketTicker: trade.marketTicker,
-                eventTicker: trade.marketDetails?.eventTicker || trade.eventTicker,
+                eventTicker: trade.marketDetails?.eventTicker ?? trade.eventTicker ?? undefined,
             }));
         const uniqueByTicker = new Map<string, string | undefined>();
         activeTrades.forEach(({ marketTicker, eventTicker }) => {
@@ -801,7 +785,7 @@ export default function UserProfileScreen() {
                     ticker,
                     candles: await marketsApi.fetchCandlesticksByMint({
                         ticker,
-                        seriesTicker,
+                        seriesTicker: seriesTicker || undefined,
                     }).catch(() => [] as CandleData[]),
                 }))
             );
@@ -835,7 +819,7 @@ export default function UserProfileScreen() {
                 tickers.forEach((t, i) => { if (events[i]?.title) next[t] = events[i].title; });
                 setEventTitleByTicker((prev) => ({ ...prev, ...next }));
             })
-            .catch(() => {});
+            .catch(() => { });
         return () => { cancelled = true; };
     }, [activePositions, previousPositions]);
 
@@ -966,13 +950,12 @@ export default function UserProfileScreen() {
                                 <View className="flex-1">
                                     <Text className="text-[11px] text-txt-secondary mb-0.5">Total PnL</Text>
                                     <Text
-                                        className={`text-[15px] font-semibold ${
-                                            tradeStats.totalPnl > 0
-                                                ? 'text-green-500'
-                                                : tradeStats.totalPnl < 0
+                                        className={`text-[15px] font-semibold ${tradeStats.totalPnl > 0
+                                            ? 'text-green-500'
+                                            : tradeStats.totalPnl < 0
                                                 ? 'text-[#FF10F0]'
                                                 : 'text-txt-primary'
-                                        }`}
+                                            }`}
                                     >
                                         {tradeStats.totalPnl === 0
                                             ? '$0'
@@ -1007,31 +990,27 @@ export default function UserProfileScreen() {
                         <View className="mb-4">
                             <View className="flex-row bg-app-card rounded-2xl p-1 border border-border/40">
                                 <TouchableOpacity
-                                    className={`flex-1 py-2.5 rounded-xl items-center ${
-                                        activeTab === 'active' ? 'bg-black' : ''
-                                    }`}
+                                    className={`flex-1 py-2.5 rounded-xl items-center ${activeTab === 'active' ? 'bg-black' : ''
+                                        }`}
                                     onPress={() => animateToTab('active')}
                                     activeOpacity={0.85}
                                 >
                                     <Text
-                                        className={`text-sm font-semibold ${
-                                            activeTab === 'active' ? 'text-white' : 'text-txt-secondary'
-                                        }`}
+                                        className={`text-sm font-semibold ${activeTab === 'active' ? 'text-white' : 'text-txt-secondary'
+                                            }`}
                                     >
                                         Active ({activePositions.length})
                                     </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    className={`flex-1 py-2.5 rounded-xl items-center ${
-                                        activeTab === 'previous' ? 'bg-black' : ''
-                                    }`}
+                                    className={`flex-1 py-2.5 rounded-xl items-center ${activeTab === 'previous' ? 'bg-black' : ''
+                                        }`}
                                     onPress={() => animateToTab('previous')}
                                     activeOpacity={0.85}
                                 >
                                     <Text
-                                        className={`text-sm font-semibold ${
-                                            activeTab === 'previous' ? 'text-white' : 'text-txt-secondary'
-                                        }`}
+                                        className={`text-sm font-semibold ${activeTab === 'previous' ? 'text-white' : 'text-txt-secondary'
+                                            }`}
                                     >
                                         Previous ({previousPositions.length})
                                     </Text>
@@ -1197,7 +1176,6 @@ export default function UserProfileScreen() {
                 market={selectedMarket}
                 backendUser={currentUser || null}
                 walletProvider={walletProvider}
-                connection={connection}
                 eventTitle={selectedMarketEventTitle}
             />
 
@@ -1211,14 +1189,13 @@ export default function UserProfileScreen() {
                     recipientAddress={profile.walletAddress}
                     recipientName={username}
                     onSubmit={async ({ toAddress, amount }) => {
-                        if (!currentUser || !solanaWallet) return;
+                        if (!currentUser || !evmWallet) return;
                         try {
                             setSendSubmitting(true);
-                            const provider = await solanaWallet.getProvider();
+                            const provider = await evmWallet.getProvider();
                             await sendUSDC({
                                 provider,
-                                wallet: solanaWallet,
-                                connection,
+                                wallet: evmWallet,
                                 fromAddress: currentUser.walletAddress,
                                 toAddress,
                                 amount,
