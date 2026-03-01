@@ -23,6 +23,39 @@ interface HomeFeedResponse {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/** Known Polymarket category slugs (order = display priority) */
+const KNOWN_CATEGORIES = [
+    'politics', 'crypto', 'sports', 'pop-culture', 'business',
+    'science', 'tech', 'world', 'entertainment', 'economics', 'esports',
+];
+
+/** Normalize raw tags (can be strings or objects) into a flat string array */
+function normalizeTags(tags: any): string[] {
+    if (!Array.isArray(tags)) return [];
+    return tags
+        .map((t: any) => (typeof t === 'string' ? t : t?.slug || t?.label || ''))
+        .filter(Boolean)
+        .map((s: string) => s.toLowerCase());
+}
+
+/** Check if a normalized tag list matches a category slug */
+function tagsMatchCategory(tags: string[], category: string): boolean {
+    const cat = category.toLowerCase().replace(/-/g, ' ');
+    return tags.some(tag => {
+        const t = tag.replace(/-/g, ' ');
+        return t === cat || t.includes(cat) || cat.includes(t);
+    });
+}
+
+/** Infer the best-matching known category from a tags array */
+function inferCategoryFromTags(tags: any): string | undefined {
+    const normalized = normalizeTags(tags);
+    for (const cat of KNOWN_CATEGORIES) {
+        if (tagsMatchCategory(normalized, cat)) return cat;
+    }
+    return undefined;
+}
+
 /**
  * Parse outcome prices from Polymarket market.
  * outcome_prices is a JSON string like "[\"0.65\",\"0.35\"]"
@@ -81,6 +114,7 @@ function normalizeEvent(event: TransformedEvent): Record<string, unknown> {
         ticker: event.slug || event.id,
         title: event.title,
         volume: event.volume,
+        volume24h: event.volume24hr,
         image_url: event.image || event.icon || null,
         imageUrl: event.image || event.icon || null,
         metadata: {
@@ -92,7 +126,9 @@ function normalizeEvent(event: TransformedEvent): Record<string, unknown> {
         markets: normalizedMarkets,
         // Pass through raw Polymarket fields
         slug: event.slug,
-        category: event.category,
+        // Derive category from tags array (Gamma's category field is often null)
+        category: event.category || inferCategoryFromTags(event.tags),
+        tags: normalizeTags(event.tags),
         active: event.active,
         closed: event.closed,
     };
@@ -155,26 +191,43 @@ export async function GET(request: NextRequest) {
         } catch { /* cache miss */ }
 
         // ── 2. Fetch events from Polymarket Gamma API ─────────────────────────
-        const limit = end - start + 1;
+        // Gamma's tag_slug filter is unreliable when combined with volume sorting,
+        // so we fetch a larger pool and do reliable post-fetch filtering.
+        const pageSize = end - start + 1;
+        const fetchLimit = category ? Math.max(pageSize * 5, 50) : pageSize;
         const events = await fetchGammaEvents({
-            limit,
-            offset: start,
+            limit: fetchLimit,
+            offset: category ? 0 : start,
             active: true,
             order: sortBy === 'volume' ? 'volume' : sortBy,
             ascending: false,
+            // Still pass tag_slug as a hint — it works sometimes and reduces data
+            tag_slug: category || undefined,
         });
 
-        // ── 3. Normalize events to expected shape ─────────────────────────────
-        const normalizedEvents = events.map(normalizeEvent);
+        // ── 3. Post-fetch category filtering using tags array ─────────────────
+        let filteredEvents = events;
+        if (category) {
+            filteredEvents = events.filter(event => {
+                const tags = normalizeTags(event.tags);
+                return tagsMatchCategory(tags, category);
+            });
+            // Apply pagination to filtered results
+            filteredEvents = filteredEvents.slice(start, end + 1);
+        }
 
-        // ── 4. Build topMarkets from THIS page's events ───────────────────────
+        // ── 4. Normalize events to expected shape ─────────────────────────────
+        const limit = end - start + 1;
+        const normalizedEvents = filteredEvents.map(normalizeEvent);
+
+        // ── 5. Build topMarkets from THIS page's events ───────────────────────
         const topMarkets: TopMarket[] = [];
         for (const event of normalizedEvents) {
             const tm = extractTopMarketFromEvent(event);
             if (tm) topMarkets.push(tm);
         }
 
-        // ── 5. Build & cache response ─────────────────────────────────────────
+        // ── 6. Build & cache response ─────────────────────────────────────────
         const response: HomeFeedResponse = {
             events: normalizedEvents,
             topMarkets,

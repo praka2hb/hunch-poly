@@ -108,12 +108,25 @@ export async function GET(
                 const ts = point?.end_period_ts;
                 const price = point?.price;
                 if (!ts || !price) continue;
+
+                // Prefer _dollars fields (real USD prices) over raw fields (often 0)
+                const toNum = (v: unknown): number | null => {
+                    if (v === null || v === undefined) return null;
+                    const n = Number(v);
+                    return Number.isFinite(n) ? n : null;
+                };
+                const open = toNum(price.open_dollars) ?? toNum(price.open);
+                const high = toNum(price.high_dollars) ?? toNum(price.high);
+                const low = toNum(price.low_dollars) ?? toNum(price.low);
+                const close = toNum(price.close_dollars) ?? toNum(price.close);
+
+                const fallback = close ?? 0;
                 candles.push({
                     timestamp: ts,
-                    open: price.open ?? price.close ?? 0,
-                    high: price.high ?? price.close ?? 0,
-                    low: price.low ?? price.close ?? 0,
-                    close: price.close ?? 0,
+                    open: open ?? fallback,
+                    high: high ?? fallback,
+                    low: low ?? fallback,
+                    close: fallback,
                     volume: point?.volume ?? 0,
                 });
             }
