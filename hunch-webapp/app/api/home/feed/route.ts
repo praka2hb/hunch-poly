@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import redis, { CacheKeys, CacheTTL } from '@/app/lib/redis';
-import { fetchGammaEvents, type PolyEvent, type PolyMarket } from '@/app/lib/polymarketGamma';
+import { fetchGammaEvents, type TransformedEvent, type TransformedMarket } from '@/app/lib/polymarketGamma';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -27,42 +27,29 @@ interface HomeFeedResponse {
  * Parse outcome prices from Polymarket market.
  * outcome_prices is a JSON string like "[\"0.65\",\"0.35\"]"
  */
-function parseOutcomePrices(market: PolyMarket): { yesPrice: number; noPrice: number } {
-    try {
-        if (market.outcome_prices) {
-            const prices = JSON.parse(market.outcome_prices);
-            return {
-                yesPrice: parseFloat(prices[0] || '0'),
-                noPrice: parseFloat(prices[1] || '0'),
-            };
-        }
-        // Fallback to tokens
-        const yesToken = market.tokens?.find(t => t.outcome === 'Yes');
-        const noToken = market.tokens?.find(t => t.outcome === 'No');
-        return {
-            yesPrice: yesToken?.price ?? 0,
-            noPrice: noToken?.price ?? 0,
-        };
-    } catch {
-        return { yesPrice: 0, noPrice: 0 };
-    }
+function parseOutcomePrices(market: TransformedMarket): { yesPrice: number; noPrice: number } {
+    // TransformedMarket already has a parsed `prices` array from MarketDerived
+    return {
+        yesPrice: market.prices?.[0] ?? 0,
+        noPrice: market.prices?.[1] ?? 0,
+    };
 }
 
 /**
  * Normalize a Polymarket event into the shape the mobile app expects.
  * Maps Gamma API fields to the existing DFlow/Jupiter response shape.
  */
-function normalizeEvent(event: PolyEvent): Record<string, unknown> {
-    const normalizedMarkets = (event.markets || []).map(market => {
+function normalizeEvent(event: TransformedEvent): Record<string, unknown> {
+    const normalizedMarkets = (event.markets || []).map((market: TransformedMarket) => {
         const { yesPrice, noPrice } = parseOutcomePrices(market);
         return {
             // Map to expected field names
-            marketId: market.condition_id,
-            ticker: market.condition_id,
+            marketId: market.conditionId,
+            ticker: market.conditionId,
             title: market.question,
             status: market.active ? 'active' : (market.closed ? 'closed' : 'inactive'),
-            volume: market.volume,
-            openInterest: market.open_interest,
+            volume: market.volumeNum,
+            openInterest: null,
             image_url: market.image || market.icon || null,
             // Pricing in the expected shape
             pricing: {
@@ -70,21 +57,21 @@ function normalizeEvent(event: PolyEvent): Record<string, unknown> {
                 sellYesPriceUsd: yesPrice,
                 buyNoPriceUsd: noPrice,
                 sellNoPriceUsd: noPrice,
-                volume: market.volume,
-                volume24h: market.volume,
-                liquidityDollars: market.liquidity,
-                openInterest: market.open_interest,
+                volume: market.volumeNum,
+                volume24h: market.volume24hr,
+                liquidityDollars: market.liquidityNum,
+                openInterest: null,
             },
             // Polymarket-specific extras
-            condition_id: market.condition_id,
-            tokens: market.tokens,
+            condition_id: market.conditionId,
+            tokens: market.tokenIds,
             slug: market.slug,
             // Pass through metadata for the detail view
             metadata: {
                 title: market.question,
                 description: market.description,
-                isTradable: market.accepting_orders,
-                closeTime: market.end_date_iso ? new Date(market.end_date_iso).getTime() : undefined,
+                isTradable: market.acceptingOrders,
+                closeTime: market.endDate ? new Date(market.endDate).getTime() : undefined,
             },
         };
     });
@@ -94,12 +81,12 @@ function normalizeEvent(event: PolyEvent): Record<string, unknown> {
         ticker: event.slug || event.id,
         title: event.title,
         volume: event.volume,
-        image_url: event.image || event.icon || event.banner || null,
-        imageUrl: event.image || event.icon || event.banner || null,
+        image_url: event.image || event.icon || null,
+        imageUrl: event.image || event.icon || null,
         metadata: {
             title: event.title,
             subtitle: event.description,
-            imageUrl: event.image || event.icon || event.banner || null,
+            imageUrl: event.image || event.icon || null,
             isLive: event.active,
         },
         markets: normalizedMarkets,
