@@ -3,9 +3,11 @@ import { fetchGammaEvent } from '@/app/lib/polymarketGamma';
 
 /**
  * GET /api/polymarket/events/[slug]
- * 
+ *
  * Fetch a single event by slug from Polymarket Gamma API.
- * Returns the full event object with nested markets and tokens.
+ * Calls Gamma /events?slug=[slug] and returns the single event
+ * with all nested markets (already transformed with derived fields).
+ * Cache: 30 seconds.
  */
 export async function GET(
     request: NextRequest,
@@ -30,9 +32,8 @@ export async function GET(
         });
     } catch (error: unknown) {
         console.error(`[API /polymarket/events/[slug]] Error:`, error);
-        return NextResponse.json(
-            { error: error instanceof Error ? error.message : 'Failed to fetch event' },
-            { status: 500 }
-        );
+        const message = error instanceof Error ? error.message : 'Failed to fetch event';
+        const status = message.includes('not found') ? 404 : 500;
+        return NextResponse.json({ error: message }, { status });
     }
 }

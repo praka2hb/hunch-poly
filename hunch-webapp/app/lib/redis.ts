@@ -27,9 +27,12 @@ export const CacheKeys = {
   // Polymarket Gamma API cache keys
   polyEvents: (params: string) => `poly:events:${params}`,
   polyEvent: (slug: string) => `poly:event:${slug}`,
+  polyEventsFeatured: () => `poly:events:featured`,
   polyMarkets: (params: string) => `poly:markets:${params}`,
+  polyMarketsTop: () => `poly:markets:top`,
   polyMarket: (conditionId: string) => `poly:market:${conditionId}`,
   polyPriceHistory: (tokenId: string, params: string) => `poly:prices:${tokenId}:${params}`,
+  polyTags: () => `poly:tags`,
 };
 
 // Cache TTL constants (in seconds)
@@ -42,9 +45,12 @@ export const CacheTTL = {
   EVENTS_LIST: 60, // 1 minute for events list (with metadata)
 
   // Polymarket TTLs
-  POLY_EVENTS: 60,  // 1 minute for events list
-  POLY_MARKET: 30,  // 30 seconds for market data
-  POLY_PRICES: 120, // 2 minutes for price history
+  POLY_EVENTS: 30,       // 30 seconds for events list
+  POLY_EVENTS_FEATURED: 60, // 60 seconds for featured events
+  POLY_MARKET: 30,       // 30 seconds for market data
+  POLY_MARKETS_TOP: 60,  // 60 seconds for top markets
+  POLY_PRICES: 120,      // 2 minutes for price history
+  POLY_TAGS: 600,        // 10 minutes for tags
 };
 
 

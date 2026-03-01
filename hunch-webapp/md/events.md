@@ -1,327 +1,1303 @@
 > ## Documentation Index
-> Fetch the complete documentation index at: https://docs.domeapi.io/llms.txt
+> Fetch the complete documentation index at: https://docs.polymarket.com/llms.txt
 > Use this file to discover all available pages before exploring further.
 
-# Events
-
-> List events (groups of related markets) on Polymarket with filtering by category and status
+# List events
 
 
 
 ## OpenAPI
 
-````yaml api-reference/openapi.json get /polymarket/events
+````yaml api-spec/gamma-openapi.yaml get /events
 openapi: 3.0.3
 info:
-  title: Dome API
-  description: APIs for prediction markets.
-  version: 0.0.1
+  title: Markets API
+  version: 1.0.0
+  description: REST API specification for public endpoints used by the Markets service.
 servers:
-  - url: https://api.domeapi.io/v1
+  - url: https://gamma-api.polymarket.com
+    description: Polymarket Gamma API Production Server
 security: []
+tags:
+  - name: Gamma Status
+    description: Gamma API status and health check
+  - name: Sports
+    description: Sports-related endpoints including teams and game data
+  - name: Tags
+    description: Tag management and related tag operations
+  - name: Events
+    description: Event management and event-related operations
+  - name: Markets
+    description: Market data and market-related operations
+  - name: Comments
+    description: Comment system and user interactions
+  - name: Series
+    description: Series management and related operations
+  - name: Profiles
+    description: User profile management
+  - name: Search
+    description: Search functionality across different entity types
 paths:
-  /polymarket/events:
+  /events:
     get:
-      summary: Get Events
-      description: >-
-        Fetches events (groups of related markets) with optional filtering by
-        event_slug, tags/categories and status. Events aggregate multiple
-        markets under a single topic (e.g., 'Presidential Election 2024'
-        contains multiple candidate markets). Returns events ordered by total
-        volume (most popular first).
-
-
-        **Example Request (single event by slug):**
-
-        ```bash
-
-        curl
-        'https://api.domeapi.io/v1/polymarket/events?event_slug=presidential-election-winner-2024&include_markets=true'
-
-        ```
-
-
-        **Example Request (filter by tags):**
-
-        ```bash
-
-        curl
-        'https://api.domeapi.io/v1/polymarket/events?tags=sports&status=open&limit=10'
-
-        ```
-
-
-        **Example Request (with markets included):**
-
-        ```bash
-
-        curl
-        'https://api.domeapi.io/v1/polymarket/events?include_markets=true&limit=5'
-
-        ```
-      operationId: getEvents
+      tags:
+        - Events
+      summary: List events
+      operationId: listEvents
       parameters:
-        - name: event_slug
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/order'
+        - $ref: '#/components/parameters/ascending'
+        - name: id
           in: query
-          required: false
-          description: >-
-            Filter by specific event slug. When provided, returns a single
-            hydrated event matching that slug (e.g.,
-            'presidential-election-winner-2024'). Use with include_markets=true
-            to get the full event with all its markets.
           schema:
-            type: string
-            example: presidential-election-winner-2024
-        - name: tags
+            type: array
+            items:
+              type: integer
+        - name: tag_id
           in: query
-          required: false
-          description: >-
-            Filter events by tag(s)/category. Can provide multiple values (e.g.,
-            sports, crypto, politics).
+          schema:
+            type: integer
+        - name: exclude_tag_id
+          in: query
+          schema:
+            type: array
+            items:
+              type: integer
+        - name: slug
+          in: query
           schema:
             type: array
             items:
               type: string
-            example:
-              - sports
-              - football
-          style: form
-          explode: true
-        - name: status
+        - name: tag_slug
           in: query
-          required: false
-          description: >-
-            Filter events by status. An event is 'open' if any of its markets
-            are still open, 'closed' if all markets are closed.
           schema:
             type: string
-            enum:
-              - open
-              - closed
-            example: open
-        - name: include_markets
+        - name: related_tags
           in: query
-          required: false
-          description: >-
-            Set to 'true' to include the list of markets for each event in the
-            response.
+          schema:
+            type: boolean
+        - name: active
+          in: query
+          schema:
+            type: boolean
+        - name: archived
+          in: query
+          schema:
+            type: boolean
+        - name: featured
+          in: query
+          schema:
+            type: boolean
+        - name: cyom
+          in: query
+          schema:
+            type: boolean
+        - name: include_chat
+          in: query
+          schema:
+            type: boolean
+        - name: include_template
+          in: query
+          schema:
+            type: boolean
+        - name: recurrence
+          in: query
           schema:
             type: string
-            enum:
-              - 'true'
-              - 'false'
-            default: 'false'
-            example: 'true'
-        - name: start_time
+        - name: closed
           in: query
-          required: false
-          description: Filter events starting after this Unix timestamp (seconds)
           schema:
-            type: integer
-            example: 1640995200
-        - name: end_time
+            type: boolean
+        - name: liquidity_min
           in: query
-          required: false
-          description: Filter events starting before this Unix timestamp (seconds)
           schema:
-            type: integer
-            example: 1672531200
-        - name: game_start_time
+            type: number
+        - name: liquidity_max
           in: query
-          required: false
-          description: >-
-            Filter events by game start time (Unix timestamp in seconds). Useful
-            for filtering sports events by when the game starts.
           schema:
-            type: integer
-            example: 1704067200
-        - name: limit
+            type: number
+        - name: volume_min
           in: query
-          required: false
-          description: 'Number of events to return (1-100). Default: 10.'
           schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 10
-            example: 10
-        - name: pagination_key
+            type: number
+        - name: volume_max
           in: query
-          required: false
-          description: >-
-            Pagination key for cursor-based pagination. Use the value from the
-            previous response's pagination.pagination_key field to get the next
-            page of results. Do not use the deprecated 'offset' parameter.
+          schema:
+            type: number
+        - name: start_date_min
+          in: query
           schema:
             type: string
-            example: >-
-              eyJsYXN0Vm9sdW1lIjoxNzEyMTMyNjYzLjk2MTYwNjMsImxhc3RFdmVudFNsdWciOiJuYmEtY2hhbXBpb24tMjAyNC0yMDI1In0=
+            format: date-time
+        - name: start_date_max
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end_date_min
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end_date_max
+          in: query
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
-          description: Events response with pagination
+          description: List of events
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  events:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        event_slug:
-                          type: string
-                          description: Unique identifier for the event
-                          example: presidential-election-winner-2024
-                        title:
-                          type: string
-                          description: Event title
-                          example: Presidential Election Winner 2024
-                        subtitle:
-                          type: string
-                          nullable: true
-                          description: Event subtitle or description
-                          example: Who will win the 2024 US Presidential Election?
-                        status:
-                          type: string
-                          enum:
-                            - open
-                            - closed
-                          description: >-
-                            Event status - 'open' if any market is open,
-                            'closed' if all markets are closed
-                          example: closed
-                        start_time:
-                          type: integer
-                          description: Unix timestamp (seconds) when the event started
-                          example: 1704067200
-                        end_time:
-                          type: integer
-                          description: Unix timestamp (seconds) when the event ends
-                          example: 1730851200
-                        volume_fiat_amount:
-                          type: number
-                          description: >-
-                            Total trading volume across all markets in the event
-                            (USD)
-                          example: 3686335059.29
-                        settlement_sources:
-                          type: string
-                          nullable: true
-                          description: Resolution/settlement source for the event
-                          example: Associated Press
-                        rules_url:
-                          type: string
-                          nullable: true
-                          description: URL to the event rules (if available)
-                          example: null
-                        image:
-                          type: string
-                          nullable: true
-                          description: Event image URL
-                          example: https://polymarket.com/images/election-2024.png
-                        tags:
-                          type: array
-                          items:
-                            type: string
-                          description: Array of category tags for the event
-                          example:
-                            - politics
-                            - elections
-                        market_count:
-                          type: integer
-                          description: Number of markets in this event
-                          example: 17
-                        markets:
-                          type: array
-                          description: >-
-                            List of markets in this event (only included when
-                            include_markets=true)
-                          items:
-                            type: object
-                            properties:
-                              market_slug:
-                                type: string
-                                example: will-trump-win-2024
-                              title:
-                                type: string
-                                example: Will Trump win the 2024 election?
-                              condition_id:
-                                type: string
-                                example: 0x1234...
-                              status:
-                                type: string
-                                enum:
-                                  - open
-                                  - closed
-                                example: closed
-                              volume_total:
-                                type: number
-                                example: 1500000000
-                  pagination:
-                    type: object
-                    properties:
-                      limit:
-                        type: integer
-                        description: Number of events returned in this response
-                        example: 10
-                      has_more:
-                        type: boolean
-                        description: >-
-                          Whether there are more events available. If true, use
-                          pagination_key to fetch the next page.
-                        example: true
-                      pagination_key:
-                        type: string
-                        nullable: true
-                        description: >-
-                          Pagination key for fetching the next page. Pass this
-                          value as the pagination_key query parameter to get the
-                          next page of results. Will be null if has_more is
-                          false.
-                        example: >-
-                          eyJsYXN0Vm9sdW1lIjoxNzEyMTMyNjYzLjk2MTYwNjMsImxhc3RFdmVudFNsdWciOiJuYmEtY2hhbXBpb24tMjAyNC0yMDI1In0=
-        '400':
-          description: Bad Request - Invalid parameters
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: Invalid status parameter
-                  message:
-                    type: string
-                    example: status must be 'open' or 'closed'
-              examples:
-                invalid_status:
-                  summary: Invalid status
-                  value:
-                    error: Invalid status parameter
-                    message: status must be 'open' or 'closed'
-                invalid_limit:
-                  summary: Invalid limit
-                  value:
-                    error: Invalid limit parameter
-                    message: limit must be a number between 1 and 100
-                invalid_offset:
-                  summary: Invalid offset
-                  value:
-                    error: Invalid offset parameter
-                    message: offset must be a non-negative number
-        '500':
-          description: Internal Server Error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: Internal Server Error
-                  message:
-                    type: string
-                    example: Failed to fetch events data
+                type: array
+                items:
+                  $ref: '#/components/schemas/Event'
+components:
+  parameters:
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+    offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+    order:
+      name: order
+      in: query
+      schema:
+        type: string
+      description: Comma-separated list of fields to order by
+    ascending:
+      name: ascending
+      in: query
+      schema:
+        type: boolean
+  schemas:
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+        ticker:
+          type: string
+          nullable: true
+        slug:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        subtitle:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        resolutionSource:
+          type: string
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+          nullable: true
+        creationDate:
+          type: string
+          format: date-time
+          nullable: true
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+        image:
+          type: string
+          nullable: true
+        icon:
+          type: string
+          nullable: true
+        active:
+          type: boolean
+          nullable: true
+        closed:
+          type: boolean
+          nullable: true
+        archived:
+          type: boolean
+          nullable: true
+        new:
+          type: boolean
+          nullable: true
+        featured:
+          type: boolean
+          nullable: true
+        restricted:
+          type: boolean
+          nullable: true
+        liquidity:
+          type: number
+          nullable: true
+        volume:
+          type: number
+          nullable: true
+        openInterest:
+          type: number
+          nullable: true
+        sortBy:
+          type: string
+          nullable: true
+        category:
+          type: string
+          nullable: true
+        subcategory:
+          type: string
+          nullable: true
+        isTemplate:
+          type: boolean
+          nullable: true
+        templateVariables:
+          type: string
+          nullable: true
+        published_at:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+        updatedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        commentsEnabled:
+          type: boolean
+          nullable: true
+        competitive:
+          type: number
+          nullable: true
+        volume24hr:
+          type: number
+          nullable: true
+        volume1wk:
+          type: number
+          nullable: true
+        volume1mo:
+          type: number
+          nullable: true
+        volume1yr:
+          type: number
+          nullable: true
+        featuredImage:
+          type: string
+          nullable: true
+        disqusThread:
+          type: string
+          nullable: true
+        parentEvent:
+          type: string
+          nullable: true
+        enableOrderBook:
+          type: boolean
+          nullable: true
+        liquidityAmm:
+          type: number
+          nullable: true
+        liquidityClob:
+          type: number
+          nullable: true
+        negRisk:
+          type: boolean
+          nullable: true
+        negRiskMarketID:
+          type: string
+          nullable: true
+        negRiskFeeBips:
+          type: integer
+          nullable: true
+        commentCount:
+          type: integer
+          nullable: true
+        imageOptimized:
+          $ref: '#/components/schemas/ImageOptimization'
+        iconOptimized:
+          $ref: '#/components/schemas/ImageOptimization'
+        featuredImageOptimized:
+          $ref: '#/components/schemas/ImageOptimization'
+        subEvents:
+          type: array
+          items:
+            type: string
+          nullable: true
+        markets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Market'
+        series:
+          type: array
+          items:
+            $ref: '#/components/schemas/Series'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        collections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Collection'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        cyom:
+          type: boolean
+          nullable: true
+        closedTime:
+          type: string
+          format: date-time
+          nullable: true
+        showAllOutcomes:
+          type: boolean
+          nullable: true
+        showMarketImages:
+          type: boolean
+          nullable: true
+        automaticallyResolved:
+          type: boolean
+          nullable: true
+        enableNegRisk:
+          type: boolean
+          nullable: true
+        automaticallyActive:
+          type: boolean
+          nullable: true
+        eventDate:
+          type: string
+          nullable: true
+        startTime:
+          type: string
+          format: date-time
+          nullable: true
+        eventWeek:
+          type: integer
+          nullable: true
+        seriesSlug:
+          type: string
+          nullable: true
+        score:
+          type: string
+          nullable: true
+        elapsed:
+          type: string
+          nullable: true
+        period:
+          type: string
+          nullable: true
+        live:
+          type: boolean
+          nullable: true
+        ended:
+          type: boolean
+          nullable: true
+        finishedTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+        gmpChartMode:
+          type: string
+          nullable: true
+        eventCreators:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventCreator'
+        tweetCount:
+          type: integer
+          nullable: true
+        chats:
+          type: array
+          items:
+            $ref: '#/components/schemas/Chat'
+        featuredOrder:
+          type: integer
+          nullable: true
+        estimateValue:
+          type: boolean
+          nullable: true
+        cantEstimate:
+          type: boolean
+          nullable: true
+        estimatedValue:
+          type: string
+          nullable: true
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/Template'
+        spreadsMainLine:
+          type: number
+          nullable: true
+        totalsMainLine:
+          type: number
+          nullable: true
+        carouselMap:
+          type: string
+          nullable: true
+        pendingDeployment:
+          type: boolean
+          nullable: true
+        deploying:
+          type: boolean
+          nullable: true
+        deployingTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+        scheduledDeploymentTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+        gameStatus:
+          type: string
+          nullable: true
+    ImageOptimization:
+      type: object
+      properties:
+        id:
+          type: string
+        imageUrlSource:
+          type: string
+          nullable: true
+        imageUrlOptimized:
+          type: string
+          nullable: true
+        imageSizeKbSource:
+          type: number
+          nullable: true
+        imageSizeKbOptimized:
+          type: number
+          nullable: true
+        imageOptimizedComplete:
+          type: boolean
+          nullable: true
+        imageOptimizedLastUpdated:
+          type: string
+          nullable: true
+        relID:
+          type: integer
+          nullable: true
+        field:
+          type: string
+          nullable: true
+        relname:
+          type: string
+          nullable: true
+    Market:
+      type: object
+      properties:
+        id:
+          type: string
+        question:
+          type: string
+          nullable: true
+        conditionId:
+          type: string
+        slug:
+          type: string
+          nullable: true
+        twitterCardImage:
+          type: string
+          nullable: true
+        resolutionSource:
+          type: string
+          nullable: true
+        endDate:
+          type: string
+          format: date-time
+          nullable: true
+        category:
+          type: string
+          nullable: true
+        ammType:
+          type: string
+          nullable: true
+        liquidity:
+          type: string
+          nullable: true
+        sponsorName:
+          type: string
+          nullable: true
+        sponsorImage:
+          type: string
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+          nullable: true
+        xAxisValue:
+          type: string
+          nullable: true
+        yAxisValue:
+          type: string
+          nullable: true
+        denominationToken:
+          type: string
+          nullable: true
+        fee:
+          type: string
+          nullable: true
+        image:
+          type: string
+          nullable: true
+        icon:
+          type: string
+          nullable: true
+        lowerBound:
+          type: string
+          nullable: true
+        upperBound:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        outcomes:
+          type: string
+          nullable: true
+        outcomePrices:
+          type: string
+          nullable: true
+        volume:
+          type: string
+          nullable: true
+        active:
+          type: boolean
+          nullable: true
+        marketType:
+          type: string
+          nullable: true
+        formatType:
+          type: string
+          nullable: true
+        lowerBoundDate:
+          type: string
+          nullable: true
+        upperBoundDate:
+          type: string
+          nullable: true
+        closed:
+          type: boolean
+          nullable: true
+        marketMakerAddress:
+          type: string
+        createdBy:
+          type: integer
+          nullable: true
+        updatedBy:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        closedTime:
+          type: string
+          nullable: true
+        wideFormat:
+          type: boolean
+          nullable: true
+        new:
+          type: boolean
+          nullable: true
+        mailchimpTag:
+          type: string
+          nullable: true
+        featured:
+          type: boolean
+          nullable: true
+        archived:
+          type: boolean
+          nullable: true
+        resolvedBy:
+          type: string
+          nullable: true
+        restricted:
+          type: boolean
+          nullable: true
+        marketGroup:
+          type: integer
+          nullable: true
+        groupItemTitle:
+          type: string
+          nullable: true
+        groupItemThreshold:
+          type: string
+          nullable: true
+        questionID:
+          type: string
+          nullable: true
+        umaEndDate:
+          type: string
+          nullable: true
+        enableOrderBook:
+          type: boolean
+          nullable: true
+        orderPriceMinTickSize:
+          type: number
+          nullable: true
+        orderMinSize:
+          type: number
+          nullable: true
+        umaResolutionStatus:
+          type: string
+          nullable: true
+        curationOrder:
+          type: integer
+          nullable: true
+        volumeNum:
+          type: number
+          nullable: true
+        liquidityNum:
+          type: number
+          nullable: true
+        endDateIso:
+          type: string
+          nullable: true
+        startDateIso:
+          type: string
+          nullable: true
+        umaEndDateIso:
+          type: string
+          nullable: true
+        hasReviewedDates:
+          type: boolean
+          nullable: true
+        readyForCron:
+          type: boolean
+          nullable: true
+        commentsEnabled:
+          type: boolean
+          nullable: true
+        volume24hr:
+          type: number
+          nullable: true
+        volume1wk:
+          type: number
+          nullable: true
+        volume1mo:
+          type: number
+          nullable: true
+        volume1yr:
+          type: number
+          nullable: true
+        gameStartTime:
+          type: string
+          nullable: true
+        secondsDelay:
+          type: integer
+          nullable: true
+        clobTokenIds:
+          type: string
+          nullable: true
+        disqusThread:
+          type: string
+          nullable: true
+        shortOutcomes:
+          type: string
+          nullable: true
+        teamAID:
+          type: string
+          nullable: true
+        teamBID:
+          type: string
+          nullable: true
+        umaBond:
+          type: string
+          nullable: true
+        umaReward:
+          type: string
+          nullable: true
+        fpmmLive:
+          type: boolean
+          nullable: true
+        volume24hrAmm:
+          type: number
+          nullable: true
+        volume1wkAmm:
+          type: number
+          nullable: true
+        volume1moAmm:
+          type: number
+          nullable: true
+        volume1yrAmm:
+          type: number
+          nullable: true
+        volume24hrClob:
+          type: number
+          nullable: true
+        volume1wkClob:
+          type: number
+          nullable: true
+        volume1moClob:
+          type: number
+          nullable: true
+        volume1yrClob:
+          type: number
+          nullable: true
+        volumeAmm:
+          type: number
+          nullable: true
+        volumeClob:
+          type: number
+          nullable: true
+        liquidityAmm:
+          type: number
+          nullable: true
+        liquidityClob:
+          type: number
+          nullable: true
+        makerBaseFee:
+          type: integer
+          nullable: true
+        takerBaseFee:
+          type: integer
+          nullable: true
+        customLiveness:
+          type: integer
+          nullable: true
+        acceptingOrders:
+          type: boolean
+          nullable: true
+        notificationsEnabled:
+          type: boolean
+          nullable: true
+        score:
+          type: integer
+          nullable: true
+        imageOptimized:
+          $ref: '#/components/schemas/ImageOptimization'
+        iconOptimized:
+          $ref: '#/components/schemas/ImageOptimization'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        creator:
+          type: string
+          nullable: true
+        ready:
+          type: boolean
+          nullable: true
+        funded:
+          type: boolean
+          nullable: true
+        pastSlugs:
+          type: string
+          nullable: true
+        readyTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+        fundedTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+        acceptingOrdersTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+        competitive:
+          type: number
+          nullable: true
+        rewardsMinSize:
+          type: number
+          nullable: true
+        rewardsMaxSpread:
+          type: number
+          nullable: true
+        spread:
+          type: number
+          nullable: true
+        automaticallyResolved:
+          type: boolean
+          nullable: true
+        oneDayPriceChange:
+          type: number
+          nullable: true
+        oneHourPriceChange:
+          type: number
+          nullable: true
+        oneWeekPriceChange:
+          type: number
+          nullable: true
+        oneMonthPriceChange:
+          type: number
+          nullable: true
+        oneYearPriceChange:
+          type: number
+          nullable: true
+        lastTradePrice:
+          type: number
+          nullable: true
+        bestBid:
+          type: number
+          nullable: true
+        bestAsk:
+          type: number
+          nullable: true
+        automaticallyActive:
+          type: boolean
+          nullable: true
+        clearBookOnStart:
+          type: boolean
+          nullable: true
+        chartColor:
+          type: string
+          nullable: true
+        seriesColor:
+          type: string
+          nullable: true
+        showGmpSeries:
+          type: boolean
+          nullable: true
+        showGmpOutcome:
+          type: boolean
+          nullable: true
+        manualActivation:
+          type: boolean
+          nullable: true
+        negRiskOther:
+          type: boolean
+          nullable: true
+        gameId:
+          type: string
+          nullable: true
+        groupItemRange:
+          type: string
+          nullable: true
+        sportsMarketType:
+          type: string
+          nullable: true
+        line:
+          type: number
+          nullable: true
+        umaResolutionStatuses:
+          type: string
+          nullable: true
+        pendingDeployment:
+          type: boolean
+          nullable: true
+        deploying:
+          type: boolean
+          nullable: true
+        deployingTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+        scheduledDeploymentTimestamp:
+          type: string
+          format: date-time
+          nullable: true
+        rfqEnabled:
+          type: boolean
+          nullable: true
+        eventStartTime:
+          type: string
+          format: date-time
+          nullable: true
+    Series:
+      type: object
+      properties:
+        id:
+          type: string
+        ticker:
+          type: string
+          nullable: true
+        slug:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        subtitle:
+          type: string
+          nullable: true
+        seriesType:
+          type: string
+          nullable: true
+        recurrence:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        image:
+          type: string
+          nullable: true
+        icon:
+          type: string
+          nullable: true
+        layout:
+          type: string
+          nullable: true
+        active:
+          type: boolean
+          nullable: true
+        closed:
+          type: boolean
+          nullable: true
+        archived:
+          type: boolean
+          nullable: true
+        new:
+          type: boolean
+          nullable: true
+        featured:
+          type: boolean
+          nullable: true
+        restricted:
+          type: boolean
+          nullable: true
+        isTemplate:
+          type: boolean
+          nullable: true
+        templateVariables:
+          type: boolean
+          nullable: true
+        publishedAt:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+        updatedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        commentsEnabled:
+          type: boolean
+          nullable: true
+        competitive:
+          type: string
+          nullable: true
+        volume24hr:
+          type: number
+          nullable: true
+        volume:
+          type: number
+          nullable: true
+        liquidity:
+          type: number
+          nullable: true
+        startDate:
+          type: string
+          format: date-time
+          nullable: true
+        pythTokenID:
+          type: string
+          nullable: true
+        cgAssetName:
+          type: string
+          nullable: true
+        score:
+          type: integer
+          nullable: true
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        collections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Collection'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        commentCount:
+          type: integer
+          nullable: true
+        chats:
+          type: array
+          items:
+            $ref: '#/components/schemas/Chat'
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+          nullable: true
+        parentCategory:
+          type: string
+          nullable: true
+        slug:
+          type: string
+          nullable: true
+        publishedAt:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+        updatedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+    Collection:
+      type: object
+      properties:
+        id:
+          type: string
+        ticker:
+          type: string
+          nullable: true
+        slug:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        subtitle:
+          type: string
+          nullable: true
+        collectionType:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        tags:
+          type: string
+          nullable: true
+        image:
+          type: string
+          nullable: true
+        icon:
+          type: string
+          nullable: true
+        headerImage:
+          type: string
+          nullable: true
+        layout:
+          type: string
+          nullable: true
+        active:
+          type: boolean
+          nullable: true
+        closed:
+          type: boolean
+          nullable: true
+        archived:
+          type: boolean
+          nullable: true
+        new:
+          type: boolean
+          nullable: true
+        featured:
+          type: boolean
+          nullable: true
+        restricted:
+          type: boolean
+          nullable: true
+        isTemplate:
+          type: boolean
+          nullable: true
+        templateVariables:
+          type: string
+          nullable: true
+        publishedAt:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+        updatedBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        commentsEnabled:
+          type: boolean
+          nullable: true
+        imageOptimized:
+          $ref: '#/components/schemas/ImageOptimization'
+        iconOptimized:
+          $ref: '#/components/schemas/ImageOptimization'
+        headerImageOptimized:
+          $ref: '#/components/schemas/ImageOptimization'
+    Tag:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+          nullable: true
+        slug:
+          type: string
+          nullable: true
+        forceShow:
+          type: boolean
+          nullable: true
+        publishedAt:
+          type: string
+          nullable: true
+        createdBy:
+          type: integer
+          nullable: true
+        updatedBy:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        forceHide:
+          type: boolean
+          nullable: true
+        isCarousel:
+          type: boolean
+          nullable: true
+    EventCreator:
+      type: object
+      properties:
+        id:
+          type: string
+        creatorName:
+          type: string
+          nullable: true
+        creatorHandle:
+          type: string
+          nullable: true
+        creatorUrl:
+          type: string
+          nullable: true
+        creatorImage:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+    Chat:
+      type: object
+      properties:
+        id:
+          type: string
+        channelId:
+          type: string
+          nullable: true
+        channelName:
+          type: string
+          nullable: true
+        channelImage:
+          type: string
+          nullable: true
+        live:
+          type: boolean
+          nullable: true
+        startTime:
+          type: string
+          format: date-time
+          nullable: true
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+    Template:
+      type: object
+      properties:
+        id:
+          type: string
+        eventTitle:
+          type: string
+          nullable: true
+        eventSlug:
+          type: string
+          nullable: true
+        eventImage:
+          type: string
+          nullable: true
+        marketTitle:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        resolutionSource:
+          type: string
+          nullable: true
+        negRisk:
+          type: boolean
+          nullable: true
+        sortBy:
+          type: string
+          nullable: true
+        showMarketImages:
+          type: boolean
+          nullable: true
+        seriesSlug:
+          type: string
+          nullable: true
+        outcomes:
+          type: string
+          nullable: true
 
 ````
