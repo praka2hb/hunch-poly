@@ -20,10 +20,10 @@ const CACHE_TTL = 60; // 60 seconds
  */
 export async function GET(
     request: NextRequest,
-    { params }: { params: { conditionId: string } }
+    { params }: { params: Promise<{ conditionId: string }> }
 ) {
     try {
-        const { conditionId } = params;
+        const { conditionId } = await params;
         if (!conditionId) {
             return NextResponse.json({ error: 'conditionId is required' }, { status: 400 });
         }
