@@ -12,10 +12,10 @@ const SAFE_INIT_CODE_HASH = '0x2bce2127ff07fb632d16c8347c4ebf501f4841168bed00d9e
  * using CREATE2 (same formula the RelayClient uses internally).
  */
 function deriveSafe(eoaAddress: string): string {
-    const salt = ethers.utils.keccak256(
-        ethers.utils.defaultAbiCoder.encode(['address'], [eoaAddress])
+    const salt = ethers.keccak256(
+        ethers.AbiCoder.defaultAbiCoder().encode(['address'], [eoaAddress])
     );
-    return ethers.utils.getCreate2Address(SAFE_FACTORY, salt, SAFE_INIT_CODE_HASH);
+    return ethers.getCreate2Address(SAFE_FACTORY, salt, SAFE_INIT_CODE_HASH);
 }
 
 /**
