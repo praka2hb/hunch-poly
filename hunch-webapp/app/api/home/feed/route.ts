@@ -20,7 +20,7 @@ interface TopMarket {
 interface HomeFeedResponse {
     events: Record<string, unknown>[];
     topMarkets: TopMarket[];
-    pagination: { start: number; end: number; total: number; hasNext: boolean };
+    pagination: { start: number; end: number; total: number; hasNext: boolean; nextStart: number };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -202,8 +202,10 @@ export async function GET(request: NextRequest) {
         // ── 2. Fetch events from Polymarket Gamma API ─────────────────────────
         // Gamma's tag_slug filter is unreliable when combined with volume sorting,
         // so we fetch a larger pool and do reliable post-fetch filtering.
+        // For non-category path: fetch 3× the page size to compensate for dead-market
+        // filtering loss (filterDeadEvents typically removes 20-40% of events).
         const pageSize = end - start + 1;
-        const fetchLimit = category ? Math.max(pageSize * 5, 50) : pageSize;
+        const fetchLimit = category ? Math.max(pageSize * 5, 50) : pageSize * 3;
         const events = await fetchGammaEvents({
             limit: fetchLimit,
             offset: category ? 0 : start,
@@ -223,10 +225,13 @@ export async function GET(request: NextRequest) {
             });
             // Apply pagination to filtered results
             filteredEvents = filteredEvents.slice(start, end + 1);
+        } else {
+            // Slice non-category results to the requested page size.
+            // (events already filtered for dead markets inside fetchGammaEvents)
+            filteredEvents = events.slice(0, pageSize);
         }
 
         // ── 4. Normalize events to expected shape ─────────────────────────────
-        const limit = end - start + 1;
         const normalizedEvents = filteredEvents.map(normalizeEvent);
 
         // ── 5. Build topMarkets from THIS page's events ───────────────────────
@@ -237,6 +242,9 @@ export async function GET(request: NextRequest) {
         }
 
         // ── 6. Build & cache response ─────────────────────────────────────────
+        // hasNext: we had enough filtered events to fill the page, meaning more
+        // data likely exists at higher Gamma offsets.
+        const hasNext = events.length >= pageSize && normalizedEvents.length >= pageSize;
         const response: HomeFeedResponse = {
             events: normalizedEvents,
             topMarkets,
@@ -244,7 +252,11 @@ export async function GET(request: NextRequest) {
                 start,
                 end: start + normalizedEvents.length - 1,
                 total: normalizedEvents.length,
-                hasNext: normalizedEvents.length === limit,
+                hasNext,
+                // nextStart is the raw Gamma offset the next page should begin at.
+                // For non-category we advanced fetchLimit positions; for category
+                // the next logical page offset is end + 1.
+                nextStart: category ? end + 1 : start + fetchLimit,
             },
         };
 
