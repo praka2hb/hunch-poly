@@ -1,6 +1,6 @@
 import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse, UserPositionsResponse } from './types';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunch-poly.vercel.app';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://84d2-2401-4900-abab-5045-a5ee-d81-72a2-e646.ngrok-free.app';
 const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
 
 // Auth token getter - must be set by the app before making authenticated calls

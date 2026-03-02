@@ -13,6 +13,7 @@ interface TopMarket {
     image_url: string | null;
     pricing: Record<string, unknown>;
     status?: string;
+    isLive?: boolean;
 }
 
 interface HomeFeedResponse {
@@ -164,6 +165,7 @@ function extractTopMarketFromEvent(event: Record<string, unknown>): TopMarket | 
         image_url: (best.image_url as string | null) ?? null,
         pricing: (best.pricing ?? {}) as Record<string, unknown>,
         status: (best.status as string) ?? undefined,
+        isLive: best.isLive as boolean | undefined,
     };
 }
 
