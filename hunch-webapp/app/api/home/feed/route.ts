@@ -14,6 +14,7 @@ interface TopMarket {
     pricing: Record<string, unknown>;
     status?: string;
     isLive?: boolean;
+    outcomeLabel?: string;
 }
 
 interface HomeFeedResponse {
@@ -109,6 +110,8 @@ function normalizeEvent(event: TransformedEvent): Record<string, unknown> {
             },
             // Derived liveness flag for frontend guard
             isLive: market.isLive,
+            // Short outcome label extracted from the market title
+            outcomeLabel: market.outcomeLabel,
         };
     });
 
@@ -166,6 +169,7 @@ function extractTopMarketFromEvent(event: Record<string, unknown>): TopMarket | 
         pricing: (best.pricing ?? {}) as Record<string, unknown>,
         status: (best.status as string) ?? undefined,
         isLive: best.isLive as boolean | undefined,
+        outcomeLabel: best.outcomeLabel as string | undefined,
     };
 }
 

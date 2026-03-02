@@ -20,6 +20,8 @@ export interface MarketDerived {
   lastTradePricePct: number | null;
   /** True only if the market is actively tradeable with valid bid/ask */
   isLive: boolean;
+  /** Short extracted label for use in outcome rows (e.g. "Spain", "Gavin Newsom") */
+  outcomeLabel: string;
 }
 
 /** Raw Gamma Market object (camelCase as returned by Gamma API) */
@@ -163,6 +165,38 @@ export function filterDeadEvents(events: TransformedEvent[]): TransformedEvent[]
 // ============ MARKET TRANSFORM ============
 
 /**
+ * Extract a short outcome label from a market title.
+ * e.g. "Will Spain win the 2026 FIFA World Cup?" → "Spain"
+ */
+function extractOutcomeLabel(title: string | null): string {
+  if (!title) return '';
+
+  // Step 1: strip leading "Will "
+  let s = title.trimStart();
+  if (s.toLowerCase().startsWith('will ')) {
+    s = s.slice(5);
+  }
+
+  // Step 2: find first verb phrase
+  const VERB_PHRASES = [' win', ' be ', ' get ', ' become ', ' receive ', ' earn ', ' secure ', ' take ', ' retain ', ' lose ', ' fall'];
+  let cutAt = -1;
+  for (const verb of VERB_PHRASES) {
+    const idx = s.toLowerCase().indexOf(verb);
+    if (idx !== -1 && (cutAt === -1 || idx < cutAt)) {
+      cutAt = idx;
+    }
+  }
+
+  // Step 3-4: slice and trim
+  if (cutAt > 0) {
+    return s.slice(0, cutAt).trim();
+  }
+
+  // Step 5: fallback — truncate at 30 chars with ellipsis
+  return s.length > 30 ? s.slice(0, 30).trimEnd() + '…' : s.trim();
+}
+
+/**
  * Apply derived fields to a raw Gamma market object.
  * Parses JSON string fields and adds percentage display values.
  * Original fields are preserved.
@@ -199,6 +233,7 @@ export function transformMarket(market: GammaMarket): TransformedMarket {
       market.bestAsk != null &&
       market.bestBid >= 0.02 &&
       market.bestBid <= 0.98,
+    outcomeLabel: extractOutcomeLabel(market.question),
   };
 }
 
