@@ -11,7 +11,10 @@ export const formatPercent = (value: string | number | undefined | null): string
     const numValue = typeof value === 'string' ? parseFloat(value) : value;
     if (isNaN(numValue)) return '—';
 
-    return `${Math.round(numValue * 100)}%`;
+    const pct = Math.round(numValue * 100);
+    // Clamp to 2-98 range; values outside are misleading dead-market artifacts
+    if (pct < 2 || pct > 98) return '—';
+    return `${pct}%`;
 };
 
 /**

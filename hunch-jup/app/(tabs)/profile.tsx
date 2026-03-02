@@ -11,11 +11,11 @@ import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
 import { api, getEventDetails, marketsApi } from "@/lib/api";
 import { executeTrade, toRawAmount } from "@/lib/tradeService";
+import { fetchPolygonNativeBalance, fetchPolygonUsdcBalance } from "@/lib/polygon";
 import { AggregatedPosition, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedEthereumWallet, usePrivy } from "@privy-io/expo";
 import { useFundWallet } from "@privy-io/expo/ui";
-
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -45,7 +45,7 @@ export default function ProfileScreen() {
     const { user, logout } = usePrivy();
     const { backendUser, setBackendUser } = useUser();
     const { wallets } = useEmbeddedEthereumWallet();
-    const evmWallet = wallets?.[0];
+    const ethereumWallet = wallets?.[0];
     const router = useRouter();
     const { fundWallet } = useFundWallet();
     const [profileData, setProfileData] = useState<User | null>(null);
@@ -85,9 +85,9 @@ export default function ProfileScreen() {
     // Get wallet provider
     useEffect(() => {
         const getProvider = async () => {
-            if (evmWallet) {
+            if (ethereumWallet) {
                 try {
-                    const provider = await evmWallet.getProvider();
+                    const provider = await ethereumWallet.getProvider();
                     setWalletProvider(provider);
                 } catch (e) {
                     console.error('Failed to get wallet provider:', e);
@@ -95,7 +95,7 @@ export default function ProfileScreen() {
             }
         };
         getProvider();
-    }, [evmWallet]);
+    }, [ethereumWallet]);
 
     // Copy trading data
     const { copySettings, fetchAllCopySettings, disableCopyTrading, isLoading: copySettingsLoading } = useCopyTrading();
@@ -170,9 +170,6 @@ export default function ProfileScreen() {
     const slideAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(0.6)).current;
     const indicatorAnim = useRef(new Animated.Value(0)).current;
-
-    // EVM wallet — no Solana connection needed
-    // TODO: Replace with Polygon/EVM provider when trading is fully migrated
 
 
     const paneWidth = SCREEN_WIDTH - 40;
@@ -293,9 +290,24 @@ export default function ProfileScreen() {
     const walletAddress = profileData?.walletAddress || backendUser?.walletAddress;
 
     const loadSolBalance = useCallback(async () => {
-        // SOL balance no longer relevant — Polygon wallet uses MATIC/USDC
-        setSolBalance(null);
-        setSolUsdPrice(null);
+        if (!walletAddress) {
+            setSolBalance(null);
+            setSolUsdPrice(null);
+            return;
+        }
+        try {
+            const [polBalance, priceResponse] = await Promise.all([
+                fetchPolygonNativeBalance(walletAddress),
+                fetch('https://api.coingecko.com/api/v3/simple/price?ids=matic-network&vs_currencies=usd'),
+            ]);
+            const priceJson = await priceResponse.json();
+            setSolBalance(polBalance);
+            setSolUsdPrice(Number(priceJson?.['matic-network']?.usd) || null);
+        } catch (error) {
+            console.error("Failed to load POL balance:", error);
+            setSolBalance(null);
+            setSolUsdPrice(null);
+        }
     }, [walletAddress]);
 
     const loadUsdcBalance = useCallback(async () => {
@@ -304,8 +316,8 @@ export default function ProfileScreen() {
             return;
         }
         try {
-            // TODO: Implement EVM/Polygon USDC balance check
-            setUsdcBalance(null);
+            const balance = await fetchPolygonUsdcBalance(walletAddress);
+            setUsdcBalance(balance);
         } catch (error) {
             console.error("Failed to load USDC balance:", error);
             setUsdcBalance(null);
@@ -326,7 +338,7 @@ export default function ProfileScreen() {
                 tickers.forEach((t, i) => { if (events[i]?.title) next[t] = events[i].title; });
                 setEventTitleByTicker((prev) => ({ ...prev, ...next }));
             })
-            .catch(() => { });
+            .catch(() => {});
         return () => { cancelled = true; };
     }, [activePositions, previousPositions]);
 
@@ -386,7 +398,7 @@ export default function ProfileScreen() {
 
     // Handle sell trade execution - sells all tokens for this position
     const handleSell = async () => {
-        if (!selectedPosition || !backendUser || !evmWallet) {
+        if (!selectedPosition || !backendUser || !ethereumWallet) {
             throw new Error('Missing required data for sell');
         }
 
@@ -415,7 +427,7 @@ export default function ProfileScreen() {
             const rawAmount = toRawAmount(tokensToSell, 6);
 
             // Get wallet provider
-            const provider = await evmWallet.getProvider();
+            const provider = await ethereumWallet.getProvider();
 
             // Execute the sell trade
             const { signature, order } = await executeTrade({
@@ -546,7 +558,7 @@ export default function ProfileScreen() {
                                         className="flex-row ml-20 items-center gap-1.5 px-3.5 py-[7px]  rounded-md  bg-slate-200 "
                                         onPress={() => {
                                             if (backendUser?.walletAddress) {
-                                                fundWallet({ address: backendUser.walletAddress });
+                                                fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
                                             }
                                         }}
                                     >
@@ -598,7 +610,7 @@ export default function ProfileScreen() {
                                 tradesCount={trades.length}
                                 balance={cashBalance}
                                 walletAddress={walletAddress || ""}
-                                wallet={evmWallet}
+                                wallet={ethereumWallet}
                                 walletProvider={walletProvider}
                                 onWithdrawSuccess={(amount) => {
                                     // Optimistic update — instant balance feedback

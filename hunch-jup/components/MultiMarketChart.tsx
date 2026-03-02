@@ -91,12 +91,11 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
                             timeFilter === 'all'
                                 ? Math.max(0, market.openTime || endTs - 365 * 24 * 60 * 60)
                                 : Math.max(0, endTs - (selectedFilter?.seconds || 7 * 24 * 60 * 60));
-                        const candles = await marketsApi.fetchCandlesticksByMint({
-                            ticker: market.ticker,
-                            seriesTicker: market.eventTicker,
+                        const candles = await marketsApi.fetchPolymarketCandles({
+                            conditionId: market.ticker,
                             startTs,
                             endTs,
-                            periodInterval: 60,
+                            interval: 60,
                         }).catch(() => [] as CandleData[]);
 
                         return {

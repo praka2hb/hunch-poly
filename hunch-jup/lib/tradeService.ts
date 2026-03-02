@@ -1,39 +1,20 @@
-// Trade service — transitional. Solana imports kept for compatibility but
-// connection is optional everywhere since we're migrating to EVM/Polygon.
-// TODO: Full EVM rewrite with EIP-712 signing once Polymarket CLOB trading is implemented.
+// Trade service for Polygon prediction order integration via backend.
+// Handles order requests, EVM transaction signing, and send/confirm flow.
 
-let Connection: any;
-let VersionedTransaction: any;
-let clusterApiUrl: any;
-try {
-    const solana = require('@solana/web3.js');
-    Connection = solana.Connection;
-    VersionedTransaction = solana.VersionedTransaction;
-    clusterApiUrl = solana.clusterApiUrl;
-} catch {
-    // @solana/web3.js not available — EVM-only mode
-    console.warn('[TradeService] @solana/web3.js not available — Solana trading disabled');
-}
 import { authenticatedFetch } from './api';
+import { POLYGON_CHAIN_ID_HEX, POLYGON_RPC_URL, POLYGON_USDC_ADDRESS, waitForPolygonTx } from './polygon';
 
 // Constants
-export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+export const USDC_MINT = POLYGON_USDC_ADDRESS; // Polygon native USDC (0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359)
 export const DECIMALS = 1_000_000; // 6 decimals for USDC and outcome tokens
-
-// Default send options - mirror web behavior
-export const DEFAULT_SEND_OPTIONS = {
-    skipPreflight: true,
-    maxRetries: 3,
-    preflightCommitment: 'confirmed' as const,
-};
 
 // Backend API URL - all prediction orders must go through backend.
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunchdotrun-roan.vercel.app';
 
 // Types
 export interface DFlowOrderResponse {
-    transaction: string; // base64 encoded - ALREADY sponsor-signed from backend
-    openTransaction?: string; // alternate field name for base64 tx
+    transaction: string; // base64 or hex encoded EVM tx from backend
+    openTransaction?: string; // alternate field name
     executionMode: 'sync' | 'async';
     inAmount: string;
     outAmount: string;
@@ -88,14 +69,17 @@ function createTradeError(
 }
 
 /**
- * Check if an error indicates blockhash expiry (requires new quote)
+ * Check if an error indicates nonce/block expiry (requires new quote)
  */
 export function isBlockhashExpiredError(error: any): boolean {
     const message = error?.message?.toLowerCase() || '';
     return (
+        message.includes('nonce too low') ||
+        message.includes('nonce has already been used') ||
+        message.includes('replacement transaction underpriced') ||
+        message.includes('already known') ||
         message.includes('blockhash not found') ||
         message.includes('blockhash expired') ||
-        message.includes('block height exceeded') ||
         message.includes('transaction has already been processed')
     );
 }
@@ -106,19 +90,15 @@ export function isBlockhashExpiredError(error: any): boolean {
 export function isSimulationError(error: any): boolean {
     const message = error?.message?.toLowerCase() || '';
     return (
-        message.includes('simulation failed') ||
+        message.includes('execution reverted') ||
         message.includes('insufficient funds') ||
-        message.includes('custom program error')
+        message.includes('gas required exceeds allowance') ||
+        message.includes('out of gas')
     );
 }
 
-function isMissingAccountCreditError(error: any): boolean {
-    const message = error?.message?.toLowerCase() || '';
-    return message.includes('attempt to debit an account but found no record of a prior credit');
-}
-
 /**
- * Request a Jupiter prediction order from backend.
+ * Request a prediction order from backend.
  */
 export async function requestOrder(params: OrderParams): Promise<DFlowOrderResponse> {
     const {
@@ -149,7 +129,7 @@ export async function requestOrder(params: OrderParams): Promise<DFlowOrderRespo
         body.contracts = amount;
     }
 
-    console.log('[TradeService] Requesting Jupiter prediction order from backend:', { marketId, isYes, isBuy, amount });
+    console.log('[TradeService] Requesting prediction order from backend:', { marketId, isYes, isBuy, amount });
 
     const response = await fetch(`${API_BASE_URL}/api/jupiter-prediction/orders`, {
         method: 'POST',
@@ -172,8 +152,8 @@ export async function requestOrder(params: OrderParams): Promise<DFlowOrderRespo
     const order = await response.json();
 
     // Support both 'transaction' and 'openTransaction' field names
-    const txBase64 = order.transaction || order.openTransaction;
-    if (!txBase64) {
+    const txData = order.transaction || order.openTransaction;
+    if (!txData) {
         throw createTradeError(
             'No transaction returned from backend',
             'UNKNOWN',
@@ -192,7 +172,7 @@ export async function requestOrder(params: OrderParams): Promise<DFlowOrderRespo
 
     return {
         ...order,
-        transaction: txBase64,
+        transaction: txData,
         executionMode: 'sync',
         inAmount: normalizedInAmount,
         outAmount: normalizedOutAmount,
@@ -200,193 +180,143 @@ export async function requestOrder(params: OrderParams): Promise<DFlowOrderRespo
 }
 
 /**
- * Get the status of an order by its transaction signature
+ * Get the status of an order by its transaction hash
  */
 export async function getOrderStatus(signature: string): Promise<DFlowOrderStatus> {
-    console.log('[TradeService] getOrderStatus is a compatibility no-op for Jupiter:', signature);
+    console.log('[TradeService] getOrderStatus is a compatibility no-op:', signature);
     return { status: 'closed' };
 }
 
 /**
- * Wait for an async order to complete
- * Returns the final status or assumes success if status check fails
- * (since transaction was already sent to blockchain)
+ * Wait for an async order to complete via Polygon tx receipt.
  */
 export async function waitForOrderCompletion(
-    signature: string,
+    txHash: string,
     maxAttempts: number = 10,
     intervalMs: number = 2000
 ): Promise<DFlowOrderStatus> {
-    await sleep(Math.min(intervalMs, 500));
+    const success = await waitForPolygonTx(txHash, POLYGON_RPC_URL, maxAttempts * intervalMs);
+    if (success === false) {
+        throw createTradeError('Transaction reverted on chain', 'SIMULATION_FAILED', true);
+    }
     return { status: 'closed' };
 }
 
 /**
- * Deserialize a base64 transaction from the backend
- * The transaction is ALREADY sponsor-signed by the backend
+ * Parse an EVM transaction from the backend response.
+ * The backend may return base64-encoded raw tx bytes or a JSON tx object.
  */
-export function deserializeTransaction(base64Transaction: string): any {
-    console.log('[TradeService] Deserializing sponsor-signed tx, base64 length:', base64Transaction.length);
+export function parseTransactionFromBackend(txData: string): any {
+    console.log('[TradeService] Parsing EVM tx from backend, data length:', txData.length);
 
-    // Decode base64 to bytes
-    const transactionBytes = Uint8Array.from(
-        Buffer.from(base64Transaction, 'base64')
-    );
-    console.log('[TradeService] Transaction byte length:', transactionBytes.length);
-
-    // Deserialize to VersionedTransaction
-    const tx = VersionedTransaction.deserialize(transactionBytes);
-
-    // Log fee payer (account 0) for debugging
-    const feePayer = tx.message.staticAccountKeys[0];
-    console.log('[TradeService] Fee Payer (sponsor):', feePayer.toString());
-
-    // Verify sponsor signature exists (should be non-zero)
-    const sponsorSig = tx.signatures[0];
-    const hasValidSponsorSig = sponsorSig && !sponsorSig.every((b: any) => b === 0);
-    console.log('[TradeService] Sponsor signature present:', hasValidSponsorSig);
-
-    if (!hasValidSponsorSig) {
-        console.warn('[TradeService] WARNING: Sponsor signature appears to be missing or empty!');
+    // Try JSON parse first (backend may return a structured tx object)
+    try {
+        const parsed = JSON.parse(txData);
+        if (parsed && (parsed.to || parsed.data)) {
+            console.log('[TradeService] Parsed JSON transaction object');
+            return parsed;
+        }
+    } catch {
+        // Not JSON, try base64
     }
 
-    return tx;
+    // Base64 encoded raw transaction bytes — return as hex for eth_sendRawTransaction
+    try {
+        const bytes = Buffer.from(txData, 'base64');
+        const hex = '0x' + bytes.toString('hex');
+        console.log('[TradeService] Decoded base64 tx to hex, length:', hex.length);
+        return { rawTx: hex };
+    } catch {
+        // If it's already hex
+        if (txData.startsWith('0x')) {
+            return { rawTx: txData };
+        }
+    }
+
+    throw createTradeError('Could not parse transaction from backend', 'UNKNOWN', false);
 }
 
 /**
- * Sign and send a sponsor-signed transaction using Privy wallet provider
- * 
+ * Sign and send an EVM transaction using Privy embedded Ethereum wallet provider.
+ *
  * FLOW:
- * 1. Transaction is ALREADY sponsor-signed (from backend)
- * 2. User signs with Privy signTransaction (sign-only, NOT signAndSendTransaction)
- * 3. We serialize and send with our own RPC connection
- * 
- * This gives us control over:
- * - When the tx is sent
- * - Retry logic with fresh quotes if blockhash expires
- * - Send options (skipPreflight, maxRetries)
- * 
- * @returns Transaction signature
+ * 1. Backend returns a transaction (structured tx or raw bytes)
+ * 2. If structured tx: use eth_sendTransaction via Privy provider (Privy signs + sends)
+ * 3. If raw tx: use eth_sendRawTransaction
+ *
+ * @returns Transaction hash
  */
 export async function signAndSendWithPrivy(
     provider: any,
-    transaction: any,
-    connection?: any
+    txData: string,
 ): Promise<string> {
-    console.log('[TradeService] Starting user sign flow...');
+    console.log('[TradeService] Starting Polygon sign+send flow...');
 
-    // Log pre-signing signature state
-    const preSigs = transaction.signatures.map((s: any, i: number) => ({
-        index: i,
-        hasSignature: s && !s.every((b: any) => b === 0),
-        preview: Buffer.from(s.slice(0, 8)).toString('hex'),
-    }));
-    console.log('[TradeService] Signatures before user sign:', preSigs);
+    const parsed = parseTransactionFromBackend(txData);
 
-    // 1. Ask Privy to JUST SIGN the transaction (not send)
-    // CRITICAL: Use signTransaction, NOT signAndSendTransaction
-    // This returns a transaction with the user's signature added
-    let signedTransaction: any;
+    // Ensure provider is on Polygon
     try {
-        const response = await provider.request({
-            method: 'signTransaction',
-            params: {
-                transaction,
-                connection,
-            }
+        await provider.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: POLYGON_CHAIN_ID_HEX }],
         });
-
-        // Unwrap the response if Privy wraps it
-        signedTransaction = response.signedTransaction || response;
-
-        if (!signedTransaction || !signedTransaction.signatures) {
-            throw createTradeError(
-                'No signatures returned from wallet',
-                'SIGNING_ERROR',
-                false
-            );
-        }
-    } catch (error: any) {
-        // User rejected or wallet error
-        if (error.code === 4001 || error.message?.includes('rejected')) {
-            throw createTradeError('Transaction rejected by user', 'SIGNING_ERROR', false);
-        }
-        throw createTradeError(
-            `Signing failed: ${error.message || 'Unknown error'}`,
-            'SIGNING_ERROR',
-            false
-        );
+    } catch (switchError: any) {
+        console.warn('[TradeService] Chain switch warning:', switchError?.message);
     }
 
-    // Log post-signing signature state
-    const postSigs = signedTransaction.signatures.map((s: Uint8Array, i: number) => ({
-        index: i,
-        hasSignature: s && !s.every((b: number) => b === 0),
-        preview: Buffer.from(s.slice(0, 8)).toString('hex'),
-    }));
-    console.log('[TradeService] Signatures after user sign:', postSigs);
+    let txHash: string;
 
-    // Verify we have at least 2 signatures (sponsor + user)
-    const validSigCount = signedTransaction.signatures.filter(
-        (s: Uint8Array) => s && !s.every((b: number) => b === 0)
-    ).length;
+    if (parsed.rawTx) {
+        // Pre-signed raw transaction — send directly
+        console.log('[TradeService] Sending pre-signed raw tx...');
+        txHash = await provider.request({
+            method: 'eth_sendRawTransaction',
+            params: [parsed.rawTx],
+        });
+    } else {
+        // Structured transaction object — have Privy sign and send
+        console.log('[TradeService] Sending structured tx via eth_sendTransaction...');
+        const txParams: any = {
+            to: parsed.to,
+            data: parsed.data || '0x',
+            value: parsed.value || '0x0',
+        };
+        if (parsed.from) txParams.from = parsed.from;
+        if (parsed.gas) txParams.gas = parsed.gas;
+        if (parsed.gasLimit) txParams.gas = parsed.gasLimit;
+        if (parsed.chainId) txParams.chainId = typeof parsed.chainId === 'number'
+            ? '0x' + parsed.chainId.toString(16) : parsed.chainId;
 
-    if (validSigCount < 2) {
-        console.warn(`[TradeService] WARNING: Only ${validSigCount} valid signature(s). Expected 2 (sponsor + user).`);
+        txHash = await provider.request({
+            method: 'eth_sendTransaction',
+            params: [txParams],
+        });
     }
 
-    // 2. Serialize and send with our RPC (mirrors web behavior)
-    const rawTransaction = signedTransaction.serialize();
-    console.log('[TradeService] Sending raw transaction, size:', rawTransaction.length);
-
-    try {
-        const signature = await connection.sendRawTransaction(rawTransaction, DEFAULT_SEND_OPTIONS);
-        console.log('[TradeService] Transaction sent successfully:', signature);
-        return signature;
-    } catch (error: any) {
-        console.error('[TradeService] Send failed:', error);
-
-        // Classify the error for retry logic
-        if (isBlockhashExpiredError(error)) {
-            throw createTradeError(
-                'Transaction expired. Please try again.',
-                'BLOCKHASH_EXPIRED',
-                true
-            );
-        }
-        if (isSimulationError(error)) {
-            throw createTradeError(
-                `Transaction simulation failed: ${error.message}`,
-                'SIMULATION_FAILED',
-                true
-            );
-        }
-        throw createTradeError(
-            error.message || 'Failed to send transaction',
-            'NETWORK_ERROR',
-            true
-        );
+    if (!txHash) {
+        throw createTradeError('No transaction hash returned', 'SIGNING_ERROR', false);
     }
+
+    console.log('[TradeService] Transaction sent:', txHash);
+    return txHash;
 }
 
 /**
- * Execute a complete trade flow with automatic retry on blockhash expiry
- * 
- * OPTIMAL FLOW:
- * 1. Request sponsor-signed order from backend (/api/jupiter-prediction/orders)
- * 2. Decode base64 → VersionedTransaction (sponsor already signed)
- * 3. User signs (signTransaction only)
- * 4. Send with our RPC (skipPreflight: true, maxRetries: 3)
- * 5. Wait for confirmation if async mode
- * 
+ * Execute a complete trade flow with automatic retry.
+ *
+ * FLOW:
+ * 1. Request order from backend (/api/jupiter-prediction/orders)
+ * 2. Parse EVM transaction from response
+ * 3. Sign and send via Privy Ethereum wallet on Polygon
+ * 4. Wait for confirmation if async mode
+ *
  * RETRY LOGIC:
- * - On blockhash expiry or simulation failure: request NEW order and retry
- * - On user rejection or signing error: don't retry
- * - Max 2 retries for network/expiry errors
+ * - On nonce/gas errors: request NEW order and retry
+ * - On user rejection: don't retry
+ * - Max 2 retries for network errors
  */
 export async function executeTrade(params: {
     provider: any;
-    connection?: any;
     userPublicKey: string;
     amount: string;
     marketId: string;
@@ -401,7 +331,6 @@ export async function executeTrade(params: {
 }> {
     const {
         provider,
-        connection,
         userPublicKey,
         amount,
         marketId,
@@ -420,7 +349,7 @@ export async function executeTrade(params: {
                 console.log(`[TradeService] Retry attempt ${attempt}/${maxRetries}...`);
             }
 
-            // Step 1: Get sponsor-signed order from backend
+            // Step 1: Get order from backend
             console.log('[TradeService] Requesting order for:', userPublicKey.substring(0, 8) + '...');
             const order = await requestOrder({
                 userPublicKey,
@@ -432,19 +361,16 @@ export async function executeTrade(params: {
                 slippageBps,
             });
 
-            // Step 2: Deserialize (tx is already sponsor-signed)
-            const transaction = deserializeTransaction(order.transaction);
+            // Step 2 & 3: Parse and send EVM transaction
+            const txHash = await signAndSendWithPrivy(provider, order.transaction);
 
-            // Step 3 & 4: User sign + send (minimize delay between these)
-            const signature = await signAndSendWithPrivy(provider, transaction, connection);
-
-            // Step 5: Wait for confirmation if async
+            // Step 4: Wait for confirmation if async
             if (order.executionMode === 'async') {
-                await waitForOrderCompletion(signature);
+                await waitForOrderCompletion(txHash);
             }
 
-            console.log('[TradeService] Trade executed successfully:', signature);
-            return { signature, order };
+            console.log('[TradeService] Trade executed successfully:', txHash);
+            return { signature: txHash, order };
 
         } catch (error: any) {
             lastError = error;
@@ -465,7 +391,7 @@ export async function executeTrade(params: {
         }
     }
 
-    // Should never reach here, but just in case
+    // Should never reach here
     throw lastError || createTradeError('Trade failed after all retries', 'UNKNOWN', false);
 }
 
@@ -485,14 +411,7 @@ function normalizeUsdToRawUnits(value: string): string {
 
 /**
  * Convert human-readable amount to raw amount (smallest unit)
- * 
- * IMPORTANT: DFlow expects amounts in smallest unit:
- * - USDC has 6 decimals: $10 → "10000000"
- * - Outcome tokens have 6 decimals
- * 
- * @param humanAmount - Human readable amount (e.g., 10 for $10)
- * @param decimals - Number of decimals (default 6 for USDC)
- * @returns String representation of smallest unit amount
+ * USDC has 6 decimals: $10 → "10000000"
  */
 export function toRawAmount(humanAmount: number | string, decimals: number = 6): string {
     const amount = typeof humanAmount === 'string' ? parseFloat(humanAmount) : humanAmount;
@@ -501,10 +420,6 @@ export function toRawAmount(humanAmount: number | string, decimals: number = 6):
 
 /**
  * Convert raw amount (smallest unit) to human-readable
- * 
- * @param rawAmount - Amount in smallest unit
- * @param decimals - Number of decimals (default 6 for USDC)
- * @returns Human readable amount
  */
 export function fromRawAmount(rawAmount: string | number, decimals: number = 6): number {
     const amount = typeof rawAmount === 'string' ? parseInt(rawAmount, 10) : rawAmount;
@@ -512,20 +427,16 @@ export function fromRawAmount(rawAmount: string | number, decimals: number = 6):
 }
 
 /**
- * Send USDC from one wallet to another via SPL token transfer.
+ * Send USDC from one wallet to another on Polygon.
  *
- * Flow (Privy Sponsor):
- * 1. POST /api/send-usdc  →  backend builds UNSIGNED SPL transfer tx, returns base64
- * 2. Client decodes → VersionedTransaction
- * 3. provider.request('signAndSendTransaction', { options: { sponsor: true } })
- *    → Privy co-signs as fee payer + user signs + Privy broadcasts
- *
- * Backend does NOT need a sponsor private key — Privy handles fee payment.
+ * Flow:
+ * 1. POST /api/send-usdc → backend builds EVM transfer tx, returns tx data
+ * 2. Parse EVM transaction
+ * 3. Sign and send via Privy embedded Ethereum wallet
  */
 export async function sendUSDC({
     provider,
     wallet,
-    connection,
     fromAddress,
     toAddress,
     amount,
@@ -534,7 +445,6 @@ export async function sendUSDC({
 }: {
     provider: any;
     wallet?: any;
-    connection?: any;
     fromAddress: string;
     toAddress: string;
     amount: number;
@@ -544,9 +454,9 @@ export async function sendUSDC({
     /** Display name of the sender shown in the push notification (send only) */
     senderName?: string;
 }): Promise<string> {
-    console.log(`[TradeService] Requesting unsigned USDC ${type} tx from backend...`);
+    console.log(`[TradeService] Requesting USDC ${type} tx from backend...`);
 
-    // Step 1: Get unsigned tx + tell backend what type this is (auto-injects Privy JWT)
+    // Step 1: Get transaction from backend (auto-injects Privy JWT)
     const response = await authenticatedFetch(`${API_BASE_URL}/api/send-usdc`, {
         method: 'POST',
         body: JSON.stringify({ fromAddress, toAddress, amount, type, senderName }),
@@ -561,63 +471,28 @@ export async function sendUSDC({
         );
     }
 
-    const { transaction: txBase64 } = await response.json();
-    if (!txBase64) {
+    const { transaction: txData } = await response.json();
+    if (!txData) {
         throw createTradeError('No transaction returned from backend', 'UNKNOWN', true);
     }
 
-    // Step 2: Deserialize (UNSIGNED — backend did NOT sponsor-sign it)
-    const transactionBytes = Uint8Array.from(Buffer.from(txBase64, 'base64'));
-    const tx = VersionedTransaction.deserialize(transactionBytes);
-    console.log('[TradeService] Unsigned tx decoded, submitting via Privy with options.sponsor: true...');
-
-    // Step 3: Privy acts as fee payer + user signs + Privy broadcasts
-    const sendWithConnection = async (conn: any) =>
-        provider.request({
-            method: 'signAndSendTransaction',
-            params: {
-                transaction: tx,
-                wallet,
-                chain: 'solana:mainnet',
-                connection: conn,
-                sponsor: true,
-                options: {
-                    // Privy docs use `sponsor`; keep legacy key too for SDK compatibility.
-                    sponsor: true,
-                    sponsorTransaction: true,
-                },
-            },
-        });
+    // Step 2 & 3: Parse and sign/send via Privy on Polygon
+    console.log('[TradeService] Signing and sending USDC transfer on Polygon...');
 
     try {
-        let result: any;
-        try {
-            result = await sendWithConnection(connection);
-        } catch (err: any) {
-            // Retry once on explicit mainnet RPC when provider/connection cluster mismatch
-            // causes "Attempt to debit an account but found no record of a prior credit."
-            if (isMissingAccountCreditError(err)) {
-                const fallbackConn = new Connection(clusterApiUrl('mainnet-beta'), 'confirmed');
-                console.warn('[TradeService] Retrying USDC send on mainnet RPC due to account credit simulation error...');
-                result = await sendWithConnection(fallbackConn);
-            } else {
-                throw err;
-            }
+        const txHash = await signAndSendWithPrivy(provider, txData);
+        console.log('[TradeService] USDC transfer sent:', txHash);
+
+        // Wait for confirmation (up to 30s)
+        const success = await waitForPolygonTx(txHash, POLYGON_RPC_URL, 30_000);
+        if (success === false) {
+            throw createTradeError('USDC transfer reverted on chain', 'SIMULATION_FAILED', false);
         }
 
-        const signature: string =
-            typeof result === 'string'
-                ? result
-                : (result?.signature ?? result?.hash ?? result?.txHash ?? '');
-
-        if (!signature) {
-            throw new Error('No signature returned from Privy signAndSendTransaction');
-        }
-
-        console.log('[TradeService] USDC transfer confirmed:', signature);
-        return signature;
+        console.log('[TradeService] USDC transfer confirmed:', txHash);
+        return txHash;
     } catch (err: any) {
-        console.error('[TradeService] Privy sponsor send error:', err);
+        console.error('[TradeService] USDC transfer error:', err);
         throw createTradeError(
             err?.message || 'Failed to sign and send USDC transfer',
             'SIGNING_ERROR',

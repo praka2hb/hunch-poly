@@ -1,13 +1,14 @@
-import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PositionsResponse, Post, PriceHistoryPoint, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse, UserPositionsResponse } from './types';
+import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse, UserPositionsResponse } from './types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunch-poly.vercel.app';
+const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
 
 // Auth token getter - must be set by the app before making authenticated calls
 let _getAccessToken: (() => Promise<string | null>) | null = null;
 
 export const setAccessTokenGetter = (getter: () => Promise<string | null>) => {
     _getAccessToken = getter;
-};
+}; 
 
 // Helper to safely parse JSON responses
 const safeJsonParse = async (response: Response) => {
@@ -478,155 +479,296 @@ export const api = {
     },
 };
 
-// ─── Polymarket Response Mappers ─────────────────────────────────────────────
-
-const mapPolymarketMarket = (raw: any): Market => {
-    // Dome API uses side_a / side_b for outcomes
-    const side_a = raw.side_a || { id: raw.primary_token_id || '', label: 'Yes' };
-    const side_b = raw.side_b || { id: raw.secondary_token_id || '', label: 'No' };
-
-    // Compute Yes probability from side_a token price if available
-    // Dome API market doesn't carry bid/ask directly, but extra_fields may have price_to_beat / final_price
-    const yesBidRaw = raw.best_bid ?? raw.yesBid ?? null;
-    const yesAskRaw = raw.best_ask ?? raw.yesAsk ?? null;
-
-    return {
-        // Core Dome API fields
-        market_slug: raw.market_slug || raw.slug || '',
-        event_slug: raw.event_slug || undefined,
-        condition_id: raw.condition_id || '',
-        title: raw.title || raw.question || '',
-        description: raw.description || undefined,
-        image: raw.image || undefined,
-        tags: raw.tags || [],
-        start_time: raw.start_time || undefined,
-        end_time: raw.end_time || undefined,
-        completed_time: raw.completed_time ?? null,
-        close_time: raw.close_time ?? null,
-        game_start_time: raw.game_start_time || null,
-        volume_1_week: raw.volume_1_week || undefined,
-        volume_1_month: raw.volume_1_month || undefined,
-        volume_1_year: raw.volume_1_year || undefined,
-        volume_total: raw.volume_total || undefined,
-        side_a,
-        side_b,
-        winning_side: raw.winning_side ?? null,
-        status: raw.status || 'open',
-        resolution_source: raw.resolution_source || undefined,
-        negative_risk_id: raw.negative_risk_id ?? null,
-        extra_fields: raw.extra_fields || undefined,
-        // Convenience aliases
-        ticker: raw.condition_id || raw.market_slug || '',
-        eventTicker: raw.event_slug || undefined,
-        subtitle: raw.description || undefined,
-        yesBid: yesBidRaw != null ? String(yesBidRaw) : null,
-        yesAsk: yesAskRaw != null ? String(yesAskRaw) : null,
-        image_url: raw.image || undefined,
-        volume: raw.volume_total || undefined,
-    };
+const toNumberSafe = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null;
+    const n = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(n) ? n : null;
 };
 
-const mapPolymarketEvent = (raw: any): Event => {
-    const mappedMarkets: Market[] = Array.isArray(raw.markets)
-        ? raw.markets.map((m: any) => mapPolymarketMarket(m))
-        : [];
-
-    return {
-        // Core Dome API fields
-        event_slug: raw.event_slug || raw.slug || '',
-        title: raw.title || '',
-        subtitle: raw.subtitle || undefined,
-        image: raw.image || undefined,
-        tags: Array.isArray(raw.tags) ? raw.tags : [],
-        start_time: raw.start_time || undefined,
-        end_time: raw.end_time || undefined,
-        volume_fiat_amount: raw.volume_fiat_amount || undefined,
-        status: raw.status || 'open',
-        market_count: raw.market_count || mappedMarkets.length,
-        markets: mappedMarkets,
-        settlement_sources: raw.settlement_sources || undefined,
-        rules_url: raw.rules_url ?? null,
-        // Convenience aliases
-        ticker: raw.event_slug || '',
-        imageUrl: raw.image || undefined,
-        category: Array.isArray(raw.tags) ? raw.tags[0] : undefined,
-        volume: raw.volume_fiat_amount || undefined,
-        closeTime: raw.end_time || undefined,
-    };
+const microUsdToUnitPrice = (value: unknown): number | null => {
+    const n = toNumberSafe(value);
+    if (n === null) return null;
+    // Polymarket prices are already in decimal 0-1 range (e.g. 0.9985 = 99.85%)
+    // Legacy Jupiter prices were in micro-USD (divide by 1M)
+    if (n >= 0 && n <= 1) return n;          // Already a unit price (Polymarket format)
+    if (n > 1 && n <= 100) return n / 100;   // Cents format
+    return n / 1_000_000;                     // Micro-USD format (legacy)
 };
 
-// ─── Caches ──────────────────────────────────────────────────────────────────
+const toUnixSeconds = (value: unknown): number | undefined => {
+    if (typeof value === 'number') return value;
+    if (typeof value !== 'string') return undefined;
+    const ms = Date.parse(value);
+    return Number.isFinite(ms) ? Math.floor(ms / 1000) : undefined;
+};
 
-const marketCache = new Map<string, { data: Market; timestamp: number }>();
-const eventCache = new Map<string, { data: Event; timestamp: number }>();
-const userCache = new Map<string, { data: User; timestamp: number }>();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-
+type EventsResult = { events: Event[]; cursor?: string };
+const EVENTS_REQUEST_CACHE_DURATION = 20 * 1000; // 20 seconds
+const eventsRequestCache = new Map<string, { data: EventsResult; timestamp: number }>();
 type HomeFeedResult = {
     events: Event[];
     topMarkets: Market[];
     cursor?: string;
     metadata?: { totalEvents: number; hasMore: boolean };
 };
-const HOME_FEED_REQUEST_CACHE_DURATION = 20 * 1000;
+const HOME_FEED_REQUEST_CACHE_DURATION = 20 * 1000; // 20 seconds
 const homeFeedRequestCache = new Map<string, { data: HomeFeedResult; timestamp: number }>();
 const homeFeedInFlightRequests = new Map<string, Promise<HomeFeedResult>>();
-
-type EventsResult = { events: Event[]; cursor?: string };
-const EVENTS_REQUEST_CACHE_DURATION = 20 * 1000;
-const eventsRequestCache = new Map<string, { data: EventsResult; timestamp: number }>();
-
-const CANDLESTICK_REQUEST_CACHE_DURATION = 20 * 1000;
+const CANDLESTICK_REQUEST_CACHE_DURATION = 20 * 1000; // 20 seconds
 const candlestickRequestCache = new Map<string, { data: CandleData[]; timestamp: number }>();
 const candlestickInFlightRequests = new Map<string, Promise<CandleData[]>>();
 
-const indexMappedEvents = (events: Event[]): void => {
-    const now = Date.now();
-    for (const event of events) {
-        if (event.ticker) {
-            eventCache.set(event.ticker, { data: event, timestamp: now });
-        }
-        if (event.event_slug) {
-            eventCache.set(event.event_slug, { data: event, timestamp: now });
-        }
-        for (const market of event.markets || []) {
-            if (market.ticker) {
-                marketCache.set(market.ticker, { data: market, timestamp: now });
-            }
-            if (market.condition_id) {
-                marketCache.set(market.condition_id, { data: market, timestamp: now });
-            }
-        }
-    }
+const toUnitPrice = (rawValue: unknown, rawDollarValue: unknown): number | null => {
+    const fromDollar = toNumberSafe(rawDollarValue);
+    if (fromDollar !== null) return fromDollar;
+
+    const n = toNumberSafe(rawValue);
+    if (n === null) return null;
+    // Prefer dollars when present; otherwise assume cents when >1.
+    return n > 1 ? n / 100 : n;
 };
 
-// ─── Polymarket Markets API ──────────────────────────────────────────────────
+const mapDFlowCandlesticksToCandles = (payload: DFlowCandlesticksResponse | null): CandleData[] => {
+    if (!payload?.candlesticks?.length) return [];
+
+    return payload.candlesticks
+        .map((row) => {
+            const timestamp = toNumberSafe((row as any)?.end_period_ts);
+            const open = toUnitPrice((row as any)?.price?.open, (row as any)?.price?.open_dollars);
+            const high = toUnitPrice((row as any)?.price?.high, (row as any)?.price?.high_dollars);
+            const low = toUnitPrice((row as any)?.price?.low, (row as any)?.price?.low_dollars);
+            const close = toUnitPrice((row as any)?.price?.close, (row as any)?.price?.close_dollars);
+            const previous = toUnitPrice((row as any)?.price?.previous, (row as any)?.price?.previous_dollars);
+            const volume = toNumberSafe((row as any)?.volume) ?? 0;
+
+            if (timestamp === null) {
+                return null;
+            }
+            const fallback = previous;
+            const normalizedOpen = open ?? fallback;
+            const normalizedHigh = high ?? fallback;
+            const normalizedLow = low ?? fallback;
+            const normalizedClose = close ?? fallback;
+            if (
+                normalizedOpen === null ||
+                normalizedHigh === null ||
+                normalizedLow === null ||
+                normalizedClose === null
+            ) {
+                return null;
+            }
+            if (normalizedHigh < normalizedLow) {
+                // If source high/low are missing/inverted around fallback values,
+                // recover by recomputing from available normalized points.
+                const recoveredHigh = Math.max(normalizedOpen, normalizedHigh, normalizedLow, normalizedClose);
+                const recoveredLow = Math.min(normalizedOpen, normalizedHigh, normalizedLow, normalizedClose);
+                return {
+                    timestamp,
+                    open: normalizedOpen,
+                    high: recoveredHigh,
+                    low: recoveredLow,
+                    close: normalizedClose,
+                    volume,
+                } as CandleData;
+            }
+
+            return {
+                timestamp,
+                open: normalizedOpen,
+                high: normalizedHigh,
+                low: normalizedLow,
+                close: normalizedClose,
+                volume,
+            } as CandleData;
+        })
+        .filter((candle): candle is CandleData => candle !== null)
+        .sort((a, b) => a.timestamp - b.timestamp);
+};
+
+const mapJupiterMarketToMarket = (market: any, eventId?: string): Market => {
+    const buyYes = microUsdToUnitPrice(market?.pricing?.buyYesPriceUsd);
+    const sellYes = microUsdToUnitPrice(market?.pricing?.sellYesPriceUsd);
+    const buyNo = microUsdToUnitPrice(market?.pricing?.buyNoPriceUsd);
+    const sellNo = microUsdToUnitPrice(market?.pricing?.sellNoPriceUsd);
+
+    const rawStatus = String(market?.status || '').toLowerCase();
+    const normalizedStatus =
+        rawStatus === 'open' || rawStatus === 'live'
+            ? 'active'
+            : rawStatus || 'active';
+
+    // Volume: Polymarket sends volume in USD directly via pricing
+    const volume = toNumberSafe(market?.pricing?.volume) ?? toNumberSafe(market?.volume) ?? undefined;
+
+    return {
+        ticker: market?.marketId || market?.condition_id || '',
+        eventTicker: eventId || market?.eventId,
+        title: market?.metadata?.title || market?.marketTitle || market?.title || market?.marketId || 'Market',
+        subtitle: market?.metadata?.description || market?.metadata?.subtitle || market?.eventTitle || '',
+        status: normalizedStatus,
+        yesSubTitle: market?.metadata?.title || market?.marketTitle,
+        noSubTitle: market?.metadata?.title || market?.marketTitle,
+        openTime: market?.openTime ?? market?.metadata?.openTime,
+        closeTime: market?.closeTime ?? market?.metadata?.closeTime,
+        volume,
+        openInterest: toNumberSafe(market?.pricing?.openInterest) ?? undefined,
+        result: market?.result || undefined,
+        rulesPrimary: market?.metadata?.rulesPrimary || market?.metadata?.description || undefined,
+        rulesSecondary: market?.metadata?.rulesSecondary || undefined,
+        yesBid: sellYes !== null ? String(sellYes) : null,
+        yesAsk: buyYes !== null ? String(buyYes) : null,
+        noBid: sellNo !== null ? String(sellNo) : null,
+        noAsk: buyNo !== null ? String(buyNo) : null,
+        image_url:
+            market?.image_url ||
+            market?.eventImageUrl ||
+            market?.featured_image_url ||
+            undefined,
+        colorCode:
+            market?.colorCode ||
+            market?.metadata?.colorCode ||
+            market?.color_code ||
+            undefined,
+        isLive: market?.isLive ?? (market?.metadata?.isTradable === true && sellYes !== null),
+    };
+};
+
+const mapJupiterEventToEvent = (event: any): Event => {
+    const eventImage =
+        event?.metadata?.imageUrl ||
+        event?.imageUrl ||
+        event?.image_url ||
+        event?.featured_image_url ||
+        undefined;
+
+    const mappedMarkets: Market[] = Array.isArray(event?.markets)
+        ? event.markets.map((m: any) => mapJupiterMarketToMarket(m, event?.eventId ?? event?.ticker))
+        : [];
+
+    // Polymarket sends volume directly in USD (not micro-USD)
+    const volume = toNumberSafe(event?.volume) ?? toNumberSafe(event?.volumeUsd);
+    const volume24h = toNumberSafe(event?.volume24h) ?? toNumberSafe(event?.volume24hr);
+
+    return {
+        ticker: event?.eventId ?? event?.ticker ?? '',
+        title: event?.metadata?.title || event?.title || event?.eventId || 'Event',
+        subtitle: event?.metadata?.subtitle || event?.description || '',
+        imageUrl: eventImage,
+        category: event?.category || undefined,
+        markets: mappedMarkets,
+        closeTime: toUnixSeconds(event?.metadata?.closeTime ?? event?.closeTime),
+        volume: volume !== null ? volume : undefined,
+        volume24h: volume24h !== null ? volume24h : undefined,
+        isLive: event?.metadata?.isLive ?? event?.active ?? undefined,
+    } as Event;
+};
+
+/**
+ * Map a raw Polymarket Gamma event (from /api/polymarket/events/[slug]) to our Event type.
+ * Gamma format uses different field names than the normalized home feed format.
+ */
+const mapPolymarketEventToEvent = (gammaEvent: any): Event => {
+    const eventImage = gammaEvent?.image || gammaEvent?.icon || undefined;
+    const eventTicker = gammaEvent?.slug || gammaEvent?.id || '';
+
+    const mappedMarkets: Market[] = Array.isArray(gammaEvent?.markets)
+        ? gammaEvent.markets.map((m: any) => {
+            // Parse Gamma market format
+            let prices: number[] = [];
+            try {
+                if (m.outcomePrices) prices = JSON.parse(m.outcomePrices).map(Number);
+            } catch { /* malformed */ }
+            const yesPrice = prices[0] ?? 0;
+            const noPrice = prices[1] ?? 0;
+
+            let tokenIds: string[] = [];
+            try {
+                if (m.clobTokenIds) tokenIds = JSON.parse(m.clobTokenIds);
+            } catch { /* malformed */ }
+
+            return {
+                ticker: m.conditionId || m.id || '',
+                eventTicker,
+                title: m.question || m.title || 'Market',
+                subtitle: m.description || '',
+                status: m.active ? 'active' : (m.closed ? 'closed' : 'inactive'),
+                yesSubTitle: m.question || m.title,
+                noSubTitle: m.question || m.title,
+                volume: toNumberSafe(m.volumeNum) ?? toNumberSafe(m.volume) ?? undefined,
+                openInterest: undefined,
+                yesBid: String(yesPrice),
+                yesAsk: String(yesPrice),
+                noBid: String(noPrice),
+                noAsk: String(noPrice),
+                image_url: m.image || m.icon || eventImage || undefined,
+                rulesPrimary: m.description || undefined,
+                closeTime: m.endDate ? Math.floor(new Date(m.endDate).getTime() / 1000) : undefined,
+            } as Market;
+        })
+        : [];
+
+    return {
+        ticker: eventTicker,
+        title: gammaEvent?.title || eventTicker || 'Event',
+        subtitle: gammaEvent?.description || '',
+        imageUrl: eventImage,
+        category: gammaEvent?.category || undefined,
+        markets: mappedMarkets,
+        closeTime: gammaEvent?.endDate ? Math.floor(new Date(gammaEvent.endDate).getTime() / 1000) : undefined,
+        volume: toNumberSafe(gammaEvent?.volume) ?? undefined,
+        volume24h: toNumberSafe(gammaEvent?.volume24hr) ?? undefined,
+        isLive: gammaEvent?.active ?? undefined,
+    } as Event;
+};
 
 export const marketsApi = {
-    /**
-     * Fetch events from /api/polymarket/events
-     */
+    fetchMarkets: async (limit: number = 200): Promise<Market[]> => {
+        const { events } = await marketsApi.fetchEvents(limit, { withNestedMarkets: true });
+        return events.flatMap((event) => event.markets || []);
+    },
+
+    fetchTags: async (): Promise<TagsResponse> => {
+        // Jupiter prediction API does not expose tags/categories endpoint.
+        return { tagsByCategories: {} };
+    },
+
+    fetchSeries: async (): Promise<Series[]> => {
+        // Jupiter prediction API does not expose a series endpoint.
+        return [];
+    },
+
     fetchEvents: async (
-        limit: number = 20,
+        limit: number = 200,
         options?: {
             status?: string;
             withNestedMarkets?: boolean;
             includeMarkets?: boolean;
             cursor?: string;
+            provider?: string;
             category?: string;
-            search?: string;
+            sortBy?: string;
+            sortDirection?: 'asc' | 'desc';
+            filter?: string;
         }
     ): Promise<EventsResult> => {
+        const parsedCursor = Number(options?.cursor ?? '0');
+        const start = Number.isFinite(parsedCursor) && parsedCursor >= 0 ? parsedCursor : 0;
+        const pageSize = Math.max(1, limit);
+        const end = start + pageSize - 1;
         const params = new URLSearchParams({
-            limit: String(Math.max(1, limit)),
-            include_markets: 'true', // Always include markets for image data
+            start: String(start),
+            end: String(end),
         });
-        if (options?.cursor) params.append('pagination_key', options.cursor);
-        if (options?.status === 'active') params.append('status', 'open');
-        if (options?.category && options.category !== 'all') params.append('tag', options.category);
-        if (options?.search) params.append('search', options.search);
 
-        const requestUrl = `${API_BASE_URL}/api/polymarket/events?${params.toString()}`;
+        if (options?.withNestedMarkets || options?.includeMarkets) params.append('includeMarkets', 'true');
+        if (options?.status === 'active' && !options?.filter) params.append('filter', 'live');
+        if (options?.provider) params.append('provider', options.provider);
+        if (options?.category) params.append('category', options.category);
+        if (options?.sortBy) params.append('sortBy', options.sortBy);
+        if (options?.sortDirection) params.append('sortDirection', options.sortDirection);
+        if (options?.filter) params.append('filter', options.filter);
+
+        const requestUrl = `${JUPITER_PREDICTION_BASE_PATH}/events?${params.toString()}`;
         const now = Date.now();
         const cached = eventsRequestCache.get(requestUrl);
         if (cached && now - cached.timestamp < EVENTS_REQUEST_CACHE_DURATION) {
@@ -640,51 +782,102 @@ export const marketsApi = {
         }
 
         const payload = (await safeJsonParse(response)) as any;
-        const rawEvents = Array.isArray(payload?.events) ? payload.events : [];
-        const events = rawEvents.map(mapPolymarketEvent);
+        const data = Array.isArray(payload?.data) ? payload.data : [];
+        const events = data.map(mapJupiterEventToEvent);
         const pagination = payload?.pagination;
-        const hasMore = pagination?.has_more ?? false;
-        const nextCursor = hasMore ? pagination?.pagination_key || String(rawEvents.length) : undefined;
+        const nextCursor = pagination?.hasNext ? String(end + 1) : undefined;
         const result = { events, cursor: nextCursor };
 
         eventsRequestCache.set(requestUrl, { data: result, timestamp: now });
+        if (eventsRequestCache.size > 20) {
+            Array.from(eventsRequestCache.entries()).forEach(([key, value]) => {
+                if (now - value.timestamp >= EVENTS_REQUEST_CACHE_DURATION) {
+                    eventsRequestCache.delete(key);
+                }
+            });
+        }
         indexMappedEvents(events);
+
         return result;
     },
 
-    /**
-     * Fetch markets from /api/polymarket/markets
-     */
-    fetchMarkets: async (limit: number = 200): Promise<Market[]> => {
-        const response = await fetch(`${API_BASE_URL}/api/polymarket/markets?limit=${limit}`);
-        if (!response.ok) {
-            const error = await safeJsonParse(response);
-            throw new Error(error?.error || 'Failed to fetch markets');
+    fetchEventDetails: async (eventTicker: string): Promise<Event> => {
+        const now = Date.now();
+        const cached = eventCache.get(eventTicker);
+        if (cached && now - cached.timestamp < CACHE_DURATION) {
+            return cached.data;
         }
-        const payload = (await safeJsonParse(response)) as any;
-        const rawMarkets = Array.isArray(payload?.markets) ? payload.markets : [];
-        return rawMarkets.map(mapPolymarketMarket);
+
+        // Try Polymarket event detail endpoint first (by slug)
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/polymarket/events/${encodeURIComponent(eventTicker)}`);
+            if (response.ok) {
+                const payload = await safeJsonParse(response);
+                if (payload) {
+                    // The Polymarket endpoint returns raw Gamma format — normalize it
+                    const normalizedEvent = mapPolymarketEventToEvent(payload);
+                    eventCache.set(eventTicker, { data: normalizedEvent, timestamp: Date.now() });
+                    indexMappedEvents([normalizedEvent]);
+                    return normalizedEvent;
+                }
+            }
+        } catch (err) {
+            // Fall through to legacy fetch
+            console.warn(`Polymarket event fetch failed for ${eventTicker}, falling back`, err);
+        }
+
+        // Fallback: search cached events or fetch feed
+        const { events } = await marketsApi.fetchEvents(100, { includeMarkets: true });
+        const matchedEvent = events.find((event) => event.ticker === eventTicker);
+        if (!matchedEvent) {
+            throw new Error(`Failed to fetch event details: event not found for ${eventTicker}`);
+        }
+        return matchedEvent;
     },
 
-    /**
-     * Fetch home feed (events + top markets)
-     * Uses /api/polymarket/events as the primary data source
-     */
+    fetchMarketByMint: async (): Promise<Market> => {
+        throw new Error('Market-by-mint is not supported by Jupiter prediction API');
+    },
+
+    fetchMarketsBatch: async (): Promise<Market[]> => {
+        return [];
+    },
+
+    fetchEventsBySeries: async (
+        _seriesTickers: string | string[],
+        options?: {
+            withNestedMarkets?: boolean;
+            status?: string;
+            limit?: number;
+        }
+    ): Promise<Event[]> => {
+        const { events } = await marketsApi.fetchEvents(options?.limit || 100, {
+            withNestedMarkets: options?.withNestedMarkets,
+            status: options?.status,
+        });
+        return events;
+    },
+
     fetchHomeFeed: async (
         limit: number = 20,
         cursor?: string,
         category?: string
     ): Promise<HomeFeedResult> => {
         const pageSize = Math.max(1, limit);
-        const params = new URLSearchParams({
-            limit: String(pageSize),
-            status: 'open',
-            include_markets: 'true', // Need nested markets for image carousel
-        });
-        if (cursor) params.append('pagination_key', cursor);
-        if (category && category !== 'all') params.append('tag', category);
+        const parsedCursor = Number(cursor ?? '0');
+        const start = Number.isFinite(parsedCursor) && parsedCursor >= 0 ? parsedCursor : 0;
+        const end = start + pageSize - 1;
 
-        const requestUrl = `${API_BASE_URL}/api/polymarket/events?${params.toString()}`;
+        const params = new URLSearchParams({
+            start: String(start),
+            end: String(end),
+            active: 'true',
+        });
+        if (category && category !== 'all') {
+            params.append('category', category);
+        }
+
+        const requestUrl = `${API_BASE_URL}/api/home/feed?${params.toString()}`;
         const now = Date.now();
         const cached = homeFeedRequestCache.get(requestUrl);
         if (cached && now - cached.timestamp < HOME_FEED_REQUEST_CACHE_DURATION) {
@@ -704,27 +897,28 @@ export const marketsApi = {
             }
 
             const payload = (await safeJsonParse(response)) as any;
-            const rawEvents = Array.isArray(payload?.events) ? payload.events : [];
-            const events = rawEvents.map(mapPolymarketEvent);
+            const eventData = Array.isArray(payload?.events)
+                ? payload.events
+                : Array.isArray(payload?.data?.events)
+                    ? payload.data.events
+                    : [];
+            const topMarketsData = Array.isArray(payload?.topMarkets)
+                ? payload.topMarkets
+                : Array.isArray(payload?.data?.topMarkets)
+                    ? payload.data.topMarkets
+                    : [];
+            const pagination = payload?.pagination || payload?.data?.pagination;
+            const hasMore = Boolean(pagination?.hasNext);
+            const nextCursor = hasMore ? String(start + pageSize) : undefined;
 
-            // Extract top markets from events — prefer those with valid images
-            const allMarkets = events.flatMap((e: Event) => (e.markets || []).map((m: Market) => ({
-                ...m,
-                eventTicker: m.eventTicker || e.event_slug,
-            })));
-            const topMarkets = allMarkets
-                .filter((m: Market) => m.image_url || m.image)
-                .sort((a: Market, b: Market) => (b.volume_total || 0) - (a.volume_total || 0))
-                .slice(0, 10);
-
-            const pagination = payload?.pagination;
-            const hasMore = pagination?.has_more ?? false;
-            const nextCursor = hasMore ? pagination?.pagination_key || String(rawEvents.length) : undefined;
-
+            const events = eventData.map(mapJupiterEventToEvent);
+            const topMarkets = topMarketsData.map((market: any) =>
+                mapJupiterMarketToMarket(market, market?.eventId)
+            );
             indexMappedEvents(events);
             for (const market of topMarkets) {
                 if (market.ticker) {
-                    marketCache.set(market.ticker, { data: market, timestamp: now });
+                    marketCache.set(market.ticker, { data: market, timestamp: Date.now() });
                 }
             }
 
@@ -733,12 +927,20 @@ export const marketsApi = {
                 topMarkets,
                 cursor: nextCursor,
                 metadata: {
-                    totalEvents: events.length,
+                    totalEvents: Number(pagination?.total) || events.length,
                     hasMore,
                 },
             };
 
             homeFeedRequestCache.set(requestUrl, { data: result, timestamp: now });
+            if (homeFeedRequestCache.size > 40) {
+                Array.from(homeFeedRequestCache.entries()).forEach(([key, value]) => {
+                    if (now - value.timestamp >= HOME_FEED_REQUEST_CACHE_DURATION) {
+                        homeFeedRequestCache.delete(key);
+                    }
+                });
+            }
+
             return result;
         })();
 
@@ -750,231 +952,258 @@ export const marketsApi = {
         }
     },
 
-    /**
-     * Fetch event details by slug
-     */
-    fetchEventDetails: async (eventSlug: string): Promise<Event> => {
-        const now = Date.now();
-        const cached = eventCache.get(eventSlug);
-        if (cached && now - cached.timestamp < CACHE_DURATION) {
-            return cached.data;
-        }
-
-        const response = await fetch(`${API_BASE_URL}/api/polymarket/events/${encodeURIComponent(eventSlug)}`);
-        if (!response.ok) {
-            const error = await safeJsonParse(response);
-            throw new Error(error?.error || `Failed to fetch event details for ${eventSlug}`);
-        }
-
-        const raw = await safeJsonParse(response);
-        const event = mapPolymarketEvent(raw);
-        eventCache.set(eventSlug, { data: event, timestamp: now });
-        if (event.ticker) eventCache.set(event.ticker, { data: event, timestamp: now });
-        return event;
+    filterOutcomeMints: async (): Promise<string[]> => {
+        return [];
     },
 
-    /**
-     * Fetch market details by condition ID or slug
-     */
-    fetchMarketDetails: async (conditionId: string): Promise<Market> => {
+    fetchMarketDetails: async (ticker: string): Promise<Market> => {
         const now = Date.now();
-        const cached = marketCache.get(conditionId);
-        if (cached && now - cached.timestamp < CACHE_DURATION) {
-            return cached.data;
+        const cachedMarket = marketCache.get(ticker);
+        if (cachedMarket && now - cachedMarket.timestamp < CACHE_DURATION) {
+            return cachedMarket.data;
         }
 
-        const response = await fetch(`${API_BASE_URL}/api/polymarket/markets/${encodeURIComponent(conditionId)}`);
-        if (!response.ok) {
-            const error = await safeJsonParse(response);
-            throw new Error(error?.error || `Market not found: ${conditionId}`);
+        // Search recently-cached event details before fetching another large page.
+        const cachedEntries = Array.from(eventCache.values());
+        for (let i = 0; i < cachedEntries.length; i++) {
+            const { data: cachedEvent, timestamp } = cachedEntries[i];
+            if (now - timestamp >= CACHE_DURATION) continue;
+            const existingMarket = cachedEvent.markets?.find((m: Market) => m.ticker === ticker);
+            if (existingMarket) {
+                marketCache.set(ticker, { data: existingMarket, timestamp: now });
+                return existingMarket;
+            }
         }
 
-        const raw = await safeJsonParse(response);
-        const market = mapPolymarketMarket(raw);
-        marketCache.set(conditionId, { data: market, timestamp: now });
-        if (market.ticker) marketCache.set(market.ticker, { data: market, timestamp: now });
-        return market;
+        // Jupiter API hard-caps at 100 items — keep limit at or below 100.
+        const { events } = await marketsApi.fetchEvents(100, { includeMarkets: true });
+        for (const event of events) {
+            const market = event.markets?.find((m) => m.ticker === ticker);
+            if (market) return market;
+        }
+
+        throw new Error(`Market not found for id: ${ticker}`);
     },
 
-    /**
-     * Fetch candlestick / price history for a market using the Dome API proxy.
-     * Accepts marketTicker (condition_id) and time range.
-     */
     fetchCandlesticksByMint: async ({
         ticker,
         marketTicker,
         marketId,
+        seriesTicker,
         startTs,
         endTs,
-        periodInterval,
+        periodInterval = 60,
     }: {
         ticker?: string;
         marketTicker?: string;
         marketId?: string;
+        /** The series/event ticker (eventTicker) — used as {series} in the Kalshi endpoint */
         seriesTicker?: string | null;
         startTs?: number;
         endTs?: number;
         periodInterval?: number;
     }): Promise<CandleData[]> => {
-        const conditionId = marketTicker || marketId || ticker;
-        if (!conditionId) return [];
+        const resolvedMarketId = marketTicker || marketId || ticker;
+        if (!resolvedMarketId) return [];
 
-        const now = Date.now();
-        const endTime = endTs ?? Math.floor(now / 1000);
-        const startTime = startTs ?? Math.max(0, endTime - 7 * 24 * 60 * 60);
-        // Map periodInterval → Dome API interval (1=1m, 60=1h, 1440=1d)
-        const interval = periodInterval === 1440 ? 1440
-            : periodInterval === 1 ? 1
-                : 60; // Default 1h
+        const nowTs = Math.floor(Date.now() / 1000);
+        const effectiveEndTs = typeof endTs === 'number' && Number.isFinite(endTs) ? endTs : nowTs;
+        const effectiveStartTs =
+            typeof startTs === 'number' && Number.isFinite(startTs)
+                ? startTs
+                : Math.max(0, effectiveEndTs - 7 * 24 * 60 * 60);
 
-        const cacheKey = `${conditionId}:${startTime}:${endTime}:${interval}`;
-        const cachedEntry = candlestickRequestCache.get(cacheKey);
-        if (cachedEntry && now - cachedEntry.timestamp < CANDLESTICK_REQUEST_CACHE_DURATION) {
-            return cachedEntry.data;
-        }
+        // Kalshi API only accepts specific period_interval values (in minutes).
+        // Pick the smallest valid interval that is >= the desired granularity AND keeps
+        // the candle count within MAX_CANDLES per request.
+        const KALSHI_VALID_INTERVALS = [1, 60, 1440] as const; // minutes, ascending
+        const MAX_CANDLES = 1000;
+        const rangeSeconds = effectiveEndTs - effectiveStartTs;
+        const desiredInterval = Math.max(1, Math.floor(periodInterval));
+        const safeInterval =
+            KALSHI_VALID_INTERVALS.find(
+                (v) => v >= desiredInterval && rangeSeconds <= v * 60 * MAX_CANDLES
+            ) ?? KALSHI_VALID_INTERVALS[KALSHI_VALID_INTERVALS.length - 1];
 
-        const inFlight = candlestickInFlightRequests.get(cacheKey);
-        if (inFlight) return inFlight;
-
-        const requestPromise = (async () => {
+        // Build the Kalshi candlesticks URL:
+        // /api/kalshi/series/{series}/markets/{marketId}/candlesticks
+        // Falls back to legacy dflow endpoint when no seriesTicker is available.
+        let requestUrl: string;
+        if (seriesTicker) {
             const params = new URLSearchParams({
-                start_time: String(startTime),
-                end_time: String(endTime),
-                interval: String(interval),
+                start_ts: String(effectiveStartTs),
+                end_ts: String(effectiveEndTs),
+                period_interval: String(safeInterval),
             });
-            const url = `${API_BASE_URL}/api/polymarket/candlesticks/${encodeURIComponent(conditionId)}?${params.toString()}`;
-            const response = await fetch(url);
-            if (!response.ok) {
-                return []; // Chart data may not be available for all markets
-            }
-
-            const payload = (await safeJsonParse(response)) as any;
-            const candles: CandleData[] = Array.isArray(payload?.candlesticks)
-                ? payload.candlesticks
-                : [];
-
-            candlestickRequestCache.set(cacheKey, { data: candles, timestamp: now });
-            return candles;
-        })();
-
-        candlestickInFlightRequests.set(cacheKey, requestPromise);
-        try {
-            return await requestPromise;
-        } finally {
-            candlestickInFlightRequests.delete(cacheKey);
-        }
-    },
-
-    /**
-     * Fetch top 6 events for a specific category (or all categories for 'hot').
-     * Uses include_markets=true so the carousel can show market images.
-     */
-    fetchTopEventsByCategory: async (
-        category: string, // e.g. 'crypto', 'politics', 'sports', 'all'
-        limit: number = 6
-    ): Promise<{ events: Event[]; hotMarkets: Market[] }> => {
-        const params = new URLSearchParams({
-            limit: String(Math.max(limit, 20)), // Fetch more so we can pick top 6
-            status: 'open',
-            include_markets: 'true',
-        });
-        if (category && category !== 'all') {
-            params.append('tag', category);
+            requestUrl = `${API_BASE_URL}/api/kalshi/series/${encodeURIComponent(
+                seriesTicker
+            )}/markets/${encodeURIComponent(resolvedMarketId)}/candlesticks?${params.toString()}`;
+        } else {
+            // Legacy fallback — no series ticker available
+            const params = new URLSearchParams({
+                start_ts: String(effectiveStartTs),
+                end_ts: String(effectiveEndTs),
+                period_interval: String(safeInterval),
+            });
+            requestUrl = `${API_BASE_URL}/api/kalshi/series/_/markets/${encodeURIComponent(
+                resolvedMarketId
+            )}/candlesticks?${params.toString()}`;
         }
 
-        const requestUrl = `${API_BASE_URL}/api/polymarket/events?${params.toString()}`;
         const now = Date.now();
-        const cached = eventsRequestCache.get(requestUrl);
-        if (cached && now - cached.timestamp < EVENTS_REQUEST_CACHE_DURATION) {
-            const events = cached.data.events.slice(0, limit);
-            const hotMarkets = events
-                .flatMap(e => (e.markets || []).map(m => ({ ...m, eventTicker: m.eventTicker || e.event_slug })))
-                .filter(m => m.image_url || m.image)
-                .sort((a, b) => (b.volume_total || 0) - (a.volume_total || 0))
-                .slice(0, 10);
-            return { events, hotMarkets };
-        }
-
-        const response = await fetch(requestUrl);
-        if (!response.ok) {
-            const error = await safeJsonParse(response);
-            throw new Error(error?.error || `Failed to fetch events: ${response.statusText}`);
-        }
-
-        const payload = (await safeJsonParse(response)) as any;
-        const rawEvents = Array.isArray(payload?.events) ? payload.events : [];
-        const allEvents = rawEvents.map(mapPolymarketEvent);
-
-        // Sort by volume descending, keep top `limit`
-        const sortedEvents = [...allEvents].sort((a, b) => (b.volume_fiat_amount || 0) - (a.volume_fiat_amount || 0));
-        const events = sortedEvents.slice(0, limit);
-
-        // Extract hot markets from the full event list (more diversity)
-        const hotMarkets = allEvents
-            .flatMap((e: Event) => (e.markets || []).map((m: Market) => ({ ...m, eventTicker: m.eventTicker || e.event_slug })))
-            .filter((m: Market) => m.image_url || m.image)
-            .sort((a: Market, b: Market) => (b.volume_total || 0) - (a.volume_total || 0))
-            .slice(0, 10);
-
-        // Cache the full result
-        const fullResult: EventsResult = { events: allEvents, cursor: undefined };
-        eventsRequestCache.set(requestUrl, { data: fullResult, timestamp: now });
-        indexMappedEvents(allEvents);
-
-        return { events, hotMarkets };
-    },
-
-    fetchTags: async (): Promise<TagsResponse> => ({ tagsByCategories: {} }),
-    fetchSeries: async (): Promise<Series[]> => [],
-    fetchMarketByMint: async (): Promise<Market> => { throw new Error('Not supported'); },
-    fetchMarketsBatch: async (): Promise<Market[]> => [],
-    filterOutcomeMints: async (): Promise<string[]> => [],
-    fetchEventsBySeries: async (
-        _seriesTickers: string | string[],
-        options?: { withNestedMarkets?: boolean; status?: string; limit?: number }
-    ): Promise<Event[]> => {
-        const { events } = await marketsApi.fetchEvents(options?.limit || 100, {
-            withNestedMarkets: options?.withNestedMarkets,
-            status: options?.status,
-        });
-        return events;
-    },
-
-    /**
-     * Fetch the live list of categories (tags) from the backend /api/categories endpoint.
-     * Each category has { id, slug, label }. The first entry is always { id: 'all', slug: 'all', label: 'All' }.
-     */
-    fetchCategories: async (): Promise<{ id: string; slug: string; label: string }[]> => {
-        const cacheKey = 'categories';
-        const now = Date.now();
-        const CACHE_MS = 10 * 60 * 1000; // 10 minutes
-
-        // Simple in-memory cache
-        const cached = (marketsApi as any)._categoriesCache as { data: { id: string; slug: string; label: string }[]; ts: number } | undefined;
-        if (cached && now - cached.ts < CACHE_MS) {
+        const cached = candlestickRequestCache.get(requestUrl);
+        if (cached && now - cached.timestamp < CANDLESTICK_REQUEST_CACHE_DURATION) {
             return cached.data;
         }
 
-        const response = await fetch(`${API_BASE_URL}/api/categories`);
-        if (!response.ok) {
-            const error = await safeJsonParse(response);
-            throw new Error(error?.error || 'Failed to fetch categories');
+        const inFlight = candlestickInFlightRequests.get(requestUrl);
+        if (inFlight) {
+            return inFlight;
         }
-        const result = await safeJsonParse(response) as { categories: { id: string; slug: string; label: string }[] };
-        const categories = result?.categories || [];
-        (marketsApi as any)._categoriesCache = { data: categories, ts: now };
-        return categories;
+
+        const requestPromise = (async () => {
+            const response = await fetch(requestUrl);
+            if (!response.ok) {
+                const error = await safeJsonParse(response);
+                throw new Error(error?.error || `Failed to fetch candlesticks (${response.status})`);
+            }
+            const payload = (await safeJsonParse(response)) as DFlowCandlesticksResponse | null;
+            const candles = mapDFlowCandlesticksToCandles(payload);
+
+            candlestickRequestCache.set(requestUrl, { data: candles, timestamp: now });
+            if (candlestickRequestCache.size > 200) {
+                Array.from(candlestickRequestCache.entries()).forEach(([key, value]) => {
+                    if (now - value.timestamp >= CANDLESTICK_REQUEST_CACHE_DURATION) {
+                        candlestickRequestCache.delete(key);
+                    }
+                });
+            }
+            return candles;
+        })();
+
+        candlestickInFlightRequests.set(requestUrl, requestPromise);
+        try {
+            return await requestPromise;
+        } finally {
+            candlestickInFlightRequests.delete(requestUrl);
+        }
+    },
+
+    /**
+     * Fetch candlestick data from the Polymarket / Dome API proxy.
+     *
+     * @param conditionId  The market conditionId (stored in market.ticker for Polymarket markets)
+     * @param startTs      Unix seconds – start of window
+     * @param endTs        Unix seconds – end of window
+     * @param interval     Dome interval: 1 = 1 min, 60 = 1 hr, 1440 = 1 day
+     */
+    fetchPolymarketCandles: async ({
+        conditionId,
+        startTs,
+        endTs,
+        interval = 60,
+    }: {
+        conditionId: string;
+        startTs?: number;
+        endTs?: number;
+        interval?: number;
+    }): Promise<CandleData[]> => {
+        if (!conditionId) return [];
+
+        const nowTs = Math.floor(Date.now() / 1000);
+        const effectiveEndTs = typeof endTs === 'number' && Number.isFinite(endTs) ? endTs : nowTs;
+        const effectiveStartTs =
+            typeof startTs === 'number' && Number.isFinite(startTs)
+                ? startTs
+                : Math.max(0, effectiveEndTs - 7 * 24 * 60 * 60);
+
+        const params = new URLSearchParams({
+            start_time: String(effectiveStartTs),
+            end_time: String(effectiveEndTs),
+            interval: String(interval),
+        });
+        const requestUrl = `${API_BASE_URL}/api/polymarket/candlesticks/${encodeURIComponent(conditionId)}?${params.toString()}`;
+
+        const now = Date.now();
+        const cached = candlestickRequestCache.get(requestUrl);
+        if (cached && now - cached.timestamp < CANDLESTICK_REQUEST_CACHE_DURATION) {
+            return cached.data;
+        }
+
+        const inFlight = candlestickInFlightRequests.get(requestUrl);
+        if (inFlight) return inFlight;
+
+        const requestPromise = (async (): Promise<CandleData[]> => {
+            const response = await fetch(requestUrl);
+            if (!response.ok) {
+                console.warn(`[polymarket candles] ${response.status} for ${conditionId}`);
+                return [];
+            }
+            const json = (await safeJsonParse(response)) as { candlesticks?: any[] } | null;
+            const raw = json?.candlesticks || [];
+
+            // Backend already returns flat { timestamp, open, high, low, close, volume }
+            const candles: CandleData[] = raw
+                .filter((c: any) => typeof c?.timestamp === 'number' && typeof c?.close === 'number')
+                .map((c: any) => ({
+                    timestamp: c.timestamp,
+                    open: c.open ?? c.close,
+                    high: c.high ?? c.close,
+                    low: c.low ?? c.close,
+                    close: c.close,
+                    volume: c.volume ?? 0,
+                }))
+                .sort((a: CandleData, b: CandleData) => a.timestamp - b.timestamp);
+
+            candlestickRequestCache.set(requestUrl, { data: candles, timestamp: now });
+            // Evict stale entries
+            if (candlestickRequestCache.size > 200) {
+                Array.from(candlestickRequestCache.entries()).forEach(([key, value]) => {
+                    if (now - value.timestamp >= CANDLESTICK_REQUEST_CACHE_DURATION) {
+                        candlestickRequestCache.delete(key);
+                    }
+                });
+            }
+            return candles;
+        })();
+
+        candlestickInFlightRequests.set(requestUrl, requestPromise);
+        try {
+            return await requestPromise;
+        } finally {
+            candlestickInFlightRequests.delete(requestUrl);
+        }
     },
 };
 
-// ─── Convenience helpers ─────────────────────────────────────────────────────
+// Market details cache to avoid repeated API calls
+const marketCache = new Map<string, { data: Market; timestamp: number }>();
+const userCache = new Map<string, { data: User; timestamp: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+const indexMappedEvents = (events: Event[]): void => {
+    const now = Date.now();
+    for (const event of events) {
+        if (event.ticker) {
+            eventCache.set(event.ticker, { data: event, timestamp: now });
+        }
+        for (const market of event.markets || []) {
+            if (market.ticker) {
+                marketCache.set(market.ticker, { data: market, timestamp: now });
+            }
+        }
+    }
+};
 
 export const getMarketDetails = async (ticker: string): Promise<Market | null> => {
     try {
+        // Check cache first
         const cached = marketCache.get(ticker);
         if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
             return cached.data;
         }
+
+        // Fetch fresh data
         const market = await marketsApi.fetchMarketDetails(ticker);
         marketCache.set(ticker, { data: market, timestamp: Date.now() });
         return market;
@@ -984,17 +1213,23 @@ export const getMarketDetails = async (ticker: string): Promise<Market | null> =
     }
 };
 
-export const getEventDetails = async (eventSlug: string): Promise<Event | null> => {
+// Event details cache to avoid repeated API calls
+const eventCache = new Map<string, { data: Event; timestamp: number }>();
+
+export const getEventDetails = async (eventTicker: string): Promise<Event | null> => {
     try {
-        const cached = eventCache.get(eventSlug);
+        // Check cache first
+        const cached = eventCache.get(eventTicker);
         if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
             return cached.data;
         }
-        const event = await marketsApi.fetchEventDetails(eventSlug);
-        eventCache.set(eventSlug, { data: event, timestamp: Date.now() });
+
+        // Fetch fresh data
+        const event = await marketsApi.fetchEventDetails(eventTicker);
+        eventCache.set(eventTicker, { data: event, timestamp: Date.now() });
         return event;
     } catch (error) {
-        console.error(`Failed to fetch event details for ${eventSlug}:`, error);
+        console.error(`Failed to fetch event details for ${eventTicker}:`, error);
         return null;
     }
 };

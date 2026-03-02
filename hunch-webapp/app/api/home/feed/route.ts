@@ -106,6 +106,8 @@ function normalizeEvent(event: TransformedEvent): Record<string, unknown> {
                 isTradable: market.acceptingOrders,
                 closeTime: market.endDate ? new Date(market.endDate).getTime() : undefined,
             },
+            // Derived liveness flag for frontend guard
+            isLive: market.isLive,
         };
     });
 
@@ -175,6 +177,7 @@ export async function GET(request: NextRequest) {
         const end = parseInt(sp.get('end') || '19', 10);
         const sortBy = sp.get('sortBy') || 'volume';
         const filter = sp.get('filter') || undefined;
+        const active = sp.get('active') !== 'false';
 
         // ── 1. Check full-response cache ──────────────────────────────────────
         const cacheParams = `poly:${category ?? 'all'}:${start}:${end}:${sortBy}:${filter ?? 'none'}`;
@@ -198,7 +201,7 @@ export async function GET(request: NextRequest) {
         const events = await fetchGammaEvents({
             limit: fetchLimit,
             offset: category ? 0 : start,
-            active: true,
+            active,
             order: sortBy === 'volume' ? 'volume' : sortBy,
             ascending: false,
             // Still pass tag_slug as a hint — it works sometimes and reduces data

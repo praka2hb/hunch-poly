@@ -1,6 +1,6 @@
+import { EventCarousel } from "@/components/EventCarousel";
 import { EventMarketImageCarousel } from "@/components/EventMarketImageCarousel";
 import { FilterPills } from "@/components/FilterPills";
-import { HotMarketsRail } from "@/components/HotMarketsRail";
 import { MarketCard } from "@/components/MarketCard";
 import MarketPopout from "@/components/MarketPopout";
 import { MarketTradeSheet } from "@/components/MarketTradeSheet";
@@ -21,19 +21,23 @@ import { ActivityIndicator, Alert, Animated, FlatList, Text, TouchableOpacity, V
 import { SafeAreaView } from "react-native-safe-area-context";
 
 
-// Fallback categories if the API fails
-const FALLBACK_CATEGORIES = [
-  { id: 'all', slug: 'all', label: 'All' },
-  { id: 'politics', slug: 'politics', label: 'Politics' },
-  { id: 'crypto', slug: 'crypto', label: 'Crypto' },
-  { id: 'sports', slug: 'sports', label: 'Sports' },
-  { id: 'pop-culture', slug: 'pop-culture', label: 'Pop Culture' },
-  { id: 'business', slug: 'business', label: 'Business' },
-  { id: 'science', slug: 'science', label: 'Science' },
-  { id: 'tech', slug: 'tech', label: 'Tech' },
+// Polymarket categories
+const POLYMARKET_CATEGORIES = [
+  'all',
+  'politics',
+  'crypto',
+  'sports',
+  'pop-culture',
+  'business',
+  'science',
+  'tech',
+  'world',
+  'entertainment',
 ];
 
-type Category = { id: string; slug: string; label: string };
+// Cache for tags response
+let tagsCache: { categories: string[]; timestamp: number } | null = null;
+const TAGS_CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
 
 // News event tickers for evidence
 const NEWS_EVENT_TICKERS = ['KXFEDDECISION-26JAN', 'KXFEDCHAIRNOM-29'];
@@ -44,22 +48,18 @@ const DUMMY_PORTFOLIO_PNL = 48.2;
 type FeedItem =
   | { type: 'market'; data: Market }
   | { type: 'eventCarousel'; data: Event[] }
-  | { type: 'news'; data: EventEvidence[] };
+  | { type: 'news'; data: EventEvidence[] }
+  | { type: 'sectionHeader'; data: { title: string; subtitle?: string } };
 
 export default function HomeScreen() {
   const { preferences, backendUser } = useUser();
   const { fundWallet } = useFundWallet();
   const { wallets } = useEmbeddedEthereumWallet();
   const router = useRouter();
-  const [categories, setCategories] = useState<Category[]>(FALLBACK_CATEGORIES);
+  const [categories, setCategories] = useState<string[]>(POLYMARKET_CATEGORIES);
   const [selectedCategory, setSelectedCategory] = useState('all');
-  // Hot events: top 6 trending across all categories — shown in carousel always
-  const [hotEvents, setHotEvents] = useState<Event[]>([]);
-  const [hotMarkets, setHotMarkets] = useState<Market[]>([]);
-  // Category events: feed filtered by selected category pill
   const [events, setEvents] = useState<Event[]>([]);
   const [markets, setMarkets] = useState<Market[]>([]);
-  const [hotEventsLoading, setHotEventsLoading] = useState(true);
   const [newsItems, setNewsItems] = useState<EventEvidence[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterLoading, setFilterLoading] = useState(false);
@@ -82,13 +82,13 @@ export default function HomeScreen() {
   const isLoadingRef = useRef(false);
   const cursorRef = useRef<string | undefined>(undefined);
   const inFlightPageKeyRef = useRef<string | null>(null);
-  const evmWallet = wallets?.[0];
+  const ethereumWallet = wallets?.[0];
 
   useEffect(() => {
     const getProvider = async () => {
-      if (evmWallet) {
+      if (ethereumWallet) {
         try {
-          const provider = await evmWallet.getProvider();
+          const provider = await ethereumWallet.getProvider();
           setWalletProvider(provider);
         } catch (error) {
           console.error('Failed to get wallet provider:', error);
@@ -96,7 +96,7 @@ export default function HomeScreen() {
       }
     };
     getProvider();
-  }, [evmWallet]);
+  }, [ethereumWallet]);
 
   // Get preferred categories from user interests
   const getPreferredCategories = (): string[] => {
@@ -106,7 +106,7 @@ export default function HomeScreen() {
 
     // Use interests if available, otherwise fall back to habits mapping (backwards compatibility)
     if (preferences.interests && preferences.interests.length > 0) {
-      return preferences.interests.filter(int => categories.some(c => c.slug === int || c.id === int));
+      return preferences.interests.filter(int => categories.includes(int));
     }
 
     // Legacy habits mapping (for backwards compatibility)
@@ -129,25 +129,10 @@ export default function HomeScreen() {
     return Array.from(relevantCategories);
   };
 
-  // Load categories on mount
+  // Load categories and news on mount
   useEffect(() => {
     loadCategories();
-    loadHotEvents(); // Always load hot events on mount (carousel)
   }, []);
-
-  // Load hot events for the carousel (top 6 trending across all categories)
-  const loadHotEvents = async () => {
-    try {
-      setHotEventsLoading(true);
-      const { events: hot, hotMarkets: hm } = await marketsApi.fetchTopEventsByCategory('all', 6);
-      setHotEvents(hot);
-      setHotMarkets(hm);
-    } catch (err) {
-      console.error('Failed to load hot events:', err);
-    } finally {
-      setHotEventsLoading(false);
-    }
-  };
 
   // Reload news when preferences change
   useEffect(() => {
@@ -157,9 +142,10 @@ export default function HomeScreen() {
   // Set default category based on preferences when they're loaded
   useEffect(() => {
     if (categories.length > 1) {
-      const preferredSlugs = getPreferredCategories();
-      if (preferredSlugs.length > 0) {
-        setSelectedCategory(preferredSlugs[0]);
+      const preferredCategories = getPreferredCategories();
+      if (preferredCategories.length > 0) {
+        // Prioritize first preferred category
+        setSelectedCategory(preferredCategories[0]);
       }
     }
   }, [preferences, categories]);
@@ -223,13 +209,17 @@ export default function HomeScreen() {
 
   const loadCategories = async () => {
     try {
-      const cats = await marketsApi.fetchCategories();
-      if (cats && cats.length > 0) {
-        setCategories(cats);
+      // Check cache first
+      if (tagsCache && Date.now() - tagsCache.timestamp < TAGS_CACHE_DURATION) {
+        setCategories(tagsCache.categories);
+        return;
       }
+
+      tagsCache = { categories: POLYMARKET_CATEGORIES, timestamp: Date.now() };
+      setCategories(POLYMARKET_CATEGORIES);
     } catch (err) {
-      console.error('Failed to fetch categories, using fallback:', err);
-      // Keep FALLBACK_CATEGORIES already set as default
+      console.error("Failed to fetch categories:", err);
+      setCategories(POLYMARKET_CATEGORIES);
     }
   };
 
@@ -273,24 +263,11 @@ export default function HomeScreen() {
       const fetchedMarkets = result.topMarkets || [];
 
       if (reset) {
-        // Deduplicate even on initial load — API may return dupes
-        const uniqueEvents = fetchedEvents.filter(
-          (e, i, arr) => arr.findIndex(x => x.ticker === e.ticker) === i
-        );
-        const uniqueMarkets = fetchedMarkets.filter(
-          (m, i, arr) => arr.findIndex(x => x.ticker === m.ticker) === i
-        );
-        setEvents(uniqueEvents);
-        setMarkets(uniqueMarkets);
+        setEvents(fetchedEvents);
+        setMarkets(fetchedMarkets);
       } else {
-        setEvents(prev => {
-          const existing = new Set(prev.map(e => e.ticker));
-          return [...prev, ...fetchedEvents.filter(e => !existing.has(e.ticker))];
-        });
-        setMarkets(prev => {
-          const existing = new Set(prev.map(m => m.ticker));
-          return [...prev, ...fetchedMarkets.filter(m => !existing.has(m.ticker))];
-        });
+        setEvents(prev => [...prev, ...fetchedEvents]);
+        setMarkets(prev => [...prev, ...fetchedMarkets]);
       }
 
       cursorRef.current = result.cursor;
@@ -313,6 +290,7 @@ export default function HomeScreen() {
 
   const handleCategoryChange = useCallback((category: string) => {
     setSelectedCategory(category);
+    // Trigger filter change loading
     loadEventsForCategory(category, true, true);
   }, []);
 
@@ -343,12 +321,11 @@ export default function HomeScreen() {
     outputRange: [1, 0],
   });
 
-  // All events merged for the eventTitleByTicker map
   const eventTitleByTicker = useMemo(() => {
     const map = new Map<string, string>();
-    [...hotEvents, ...events].forEach((event) => map.set(event.ticker || event.event_slug, event.title));
+    events.forEach((event) => map.set(event.ticker, event.title));
     return map;
-  }, [hotEvents, events]);
+  }, [events]);
 
   const handleOpenMarketSheet = (marketItem: Market) => {
     setSelectedMarket(marketItem);
@@ -364,21 +341,60 @@ export default function HomeScreen() {
     setMarketSheetVisible(false);
   };
 
-  // Map feed items for the vertical list: category markets → news → event carousel
+  // Create mixed feed items (markets list with event carousels + news carousel)
   const feedItems = useMemo((): FeedItem[] => {
     const items: FeedItem[] = [];
-    // Show category markets first
-    markets.forEach((market) => items.push({ type: 'market', data: market }));
-    // News block
+
+    // Filter markets: only show live markets with valid odds
+    const liveMarkets = markets.filter((m) => {
+      if (m.isLive === false) return false;
+      const yesBid = m.yesBid ? parseFloat(m.yesBid) * 100 : null;
+      if (yesBid !== null && (yesBid < 2 || yesBid > 98)) return false;
+      return true;
+    });
+
+    // Filter events: only show events that have at least one market
+    const liveEvents = events.filter((e) => {
+      if (e.isLive === false) return false;
+      if (Array.isArray(e.markets) && e.markets.length === 0) return false;
+      return true;
+    });
+
+    // Trending Markets section
+    if (liveMarkets.length > 0) {
+      items.push({ type: 'sectionHeader', data: { title: 'Trending Markets', subtitle: `${liveMarkets.length} active` } });
+      liveMarkets.forEach((market) => items.push({ type: 'market', data: market }));
+    }
+
+    // News section
     if (newsItems.length > 0) {
       items.push({ type: 'news', data: newsItems });
     }
+
+    // Events section
+    if (liveEvents.length > 0) {
+      items.push({ type: 'eventCarousel', data: liveEvents });
+    }
+
     return items;
-  }, [markets, newsItems]);
+  }, [events, markets, newsItems]);
 
   const renderFeedItem = ({ item }: { item: FeedItem }) => {
+    if (item.type === 'sectionHeader') {
+      return (
+        <View className="px-5 pt-4 pb-2 flex-row items-center justify-between">
+          <Text className="text-[16px] font-bold text-txt-primary">{item.data.title}</Text>
+          {item.data.subtitle && (
+            <Text className="text-[13px] text-txt-secondary">{item.data.subtitle}</Text>
+          )}
+        </View>
+      );
+    }
     if (item.type === 'news') {
       return <MiniNewsCarousel items={item.data} />;
+    }
+    if (item.type === 'eventCarousel') {
+      return <EventCarousel items={item.data} />;
     }
     if (item.type === 'market') {
       return (
@@ -452,7 +468,7 @@ export default function HomeScreen() {
               className="flex-row items-center gap-1.5 px-3.5 py-2 rounded-md bg-slate-200"
               onPress={() => {
                 if (backendUser?.walletAddress) {
-                  fundWallet({ address: backendUser.walletAddress });
+                  fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
                 }
               }}
               activeOpacity={0.7}
@@ -498,6 +514,7 @@ export default function HomeScreen() {
             <FlatList
               data={feedItems}
               keyExtractor={(item, index) => {
+                if (item.type === 'sectionHeader') return `section-${item.data.title}-${index}`;
                 if (item.type === 'news') return `news-${index}`;
                 if (item.type === 'market') return `market-${item.data.ticker}`;
                 if (item.type === 'eventCarousel') return `event-carousel-${index}`;
@@ -526,28 +543,22 @@ export default function HomeScreen() {
               onEndReachedThreshold={0.5}
               ListHeaderComponent={
                 <>
-                  {/* Carousel: always shows Hot events (regardless of category filter) */}
-                  <EventMarketImageCarousel
-                    items={hotEvents.length > 0 ? hotEvents : events}
-                    isLoadingMore={hotEventsLoading}
-                  />
-                  {/* Hot Markets Rail: top markets from hot events */}
-                  {hotMarkets.length > 0 && (
-                    <HotMarketsRail
-                      markets={hotMarkets}
-                      onMarketPress={handleOpenMarketSheet}
-                      eventTitleByTicker={eventTitleByTicker}
-                    />
-                  )}
+                  <EventMarketImageCarousel items={events} />
+                  {loadingMore ? (
+                    <View className="px-5 pb-3 flex-row items-center justify-center">
+                      <ActivityIndicator size="small" color={Theme.textSecondary} />
+                      <Text className="ml-2 text-sm text-txt-secondary">Loading more events...</Text>
+                    </View>
+                  ) : null}
                 </>
               }
               ListFooterComponent={renderFooter}
               ItemSeparatorComponent={() => null}
               ListEmptyComponent={
                 <View className="flex-1 justify-center items-center py-20">
-                  <Ionicons name="search-outline" size={48} color={Theme.textDisabled} />
-                  <Text className="text-txt-secondary text-base mt-4">
-                    No events or markets found
+                  <Ionicons name="pulse-outline" size={48} color={Theme.textDisabled} />
+                  <Text className="text-txt-secondary text-base mt-4 text-center px-10">
+                    No active markets right now. Check back soon.
                   </Text>
                 </View>
               }

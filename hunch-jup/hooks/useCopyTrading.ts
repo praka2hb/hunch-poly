@@ -209,12 +209,12 @@ export function useCopyTrading(): UseCopyTradingReturn {
             const walletHasSigner = hasExistingSigner(walletAddress);
 
             console.log('[CopyTrading] Status check:', {
-                hasClobCredentials: status.hasClobCredentials,
+                hasValidDelegation: status.hasValidDelegation,
                 walletHasSigner,
             });
 
             // Step 2: Determine flow
-            if (status.hasClobCredentials && walletHasSigner) {
+            if (status.hasValidDelegation && walletHasSigner) {
                 // FAST PATH - No signature needed, just save settings
                 console.log('[CopyTrading] Fast path - saving settings directly');
 

@@ -3,14 +3,24 @@ import * as Haptics from 'expo-haptics';
 import { useCallback, useRef } from 'react';
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-interface Category {
-    id: string;
-    slug: string;
-    label: string;
-}
+// Display labels for category slugs
+const CATEGORY_LABELS: Record<string, string> = {
+    'all': '🔥 Hot',
+    'politics': '🏛 Politics',
+    'crypto': '₿ Crypto',
+    'sports': '⚽ Sports',
+    'pop-culture': '🎭 Culture',
+    'business': '💼 Business',
+    'science': '🔬 Science',
+    'tech': '💻 Tech',
+    'world': '🌍 World',
+    'entertainment': '🎬 Entertain',
+    'economics': '📈 Economics',
+    'esports': '🎮 Esports',
+};
 
 interface FilterPillsProps {
-    categories: Category[];
+    categories: string[];
     selectedCategory: string;
     onCategoryChange: (category: string) => void;
     preferredCategories?: string[];
@@ -20,19 +30,18 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange, pr
     const flatListRef = useRef<FlatList>(null);
 
     // Sort categories to show preferred ones first
-    // Sort categories to show preferred ones first based on slug
     const sortedCategories = [...categories].sort((a, b) => {
-        const aIsPreferred = preferredCategories.includes(a.slug);
-        const bIsPreferred = preferredCategories.includes(b.slug);
+        const aIsPreferred = preferredCategories.includes(a);
+        const bIsPreferred = preferredCategories.includes(b);
         if (aIsPreferred && !bIsPreferred) return -1;
         if (!aIsPreferred && bIsPreferred) return 1;
         return 0;
     });
 
-    const handlePress = useCallback((categorySlug: string, index: number) => {
-        if (categorySlug !== selectedCategory) {
+    const handlePress = useCallback((category: string, index: number) => {
+        if (category !== selectedCategory) {
             Haptics.selectionAsync();
-            onCategoryChange(categorySlug);
+            onCategoryChange(category);
             // Scroll to make selected pill visible
             flatListRef.current?.scrollToIndex({
                 index,
@@ -42,14 +51,14 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange, pr
         }
     }, [selectedCategory, onCategoryChange]);
 
-    const renderPill = useCallback(({ item, index }: { item: Category; index: number }) => {
-        const isSelected = item.slug === selectedCategory;
-        // The API returns 'All' instead of 'all', but we want 'Hot' for the default feed
-        const displayLabel = item.slug === 'all' ? 'Hot' : item.label;
-
+    const renderPill = useCallback(({ item, index }: { item: string; index: number }) => {
+        const isSelected = item === selectedCategory;
+        // Use display label from map, fallback to capitalized slug
+        const label = CATEGORY_LABELS[item] ||
+            (item.charAt(0).toUpperCase() + item.slice(1).replace(/-/g, ' '));
         return (
             <TouchableOpacity
-                onPress={() => handlePress(item.slug, index)}
+                onPress={() => handlePress(item, index)}
                 activeOpacity={0.7}
                 style={[
                     styles.pill,
@@ -62,7 +71,7 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange, pr
                         isSelected ? styles.pillTextSelected : styles.pillTextUnselected,
                     ]}
                 >
-                    {displayLabel}
+                    {label}
                 </Text>
             </TouchableOpacity>
         );
@@ -74,7 +83,7 @@ export const FilterPills = ({ categories, selectedCategory, onCategoryChange, pr
                 ref={flatListRef}
                 horizontal
                 data={sortedCategories}
-                keyExtractor={(item) => item.slug}
+                keyExtractor={(item) => item}
                 renderItem={renderPill}
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.contentContainer}

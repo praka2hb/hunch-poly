@@ -33,8 +33,7 @@ export async function GET(request: NextRequest) {
         const featured = sp.get('featured') !== null ? sp.get('featured') === 'true' : undefined;
         const order = sp.get('order') || 'volume24hr';
         const ascending = sp.get('ascending') === 'true';
-        const volume_min = sp.get('volume_min') ? Number(sp.get('volume_min')) : undefined;
-        const liquidity_min = sp.get('liquidity_min') ? Number(sp.get('liquidity_min')) : undefined;
+        // volume_min and liquidity_min are now hardcoded in the Gamma service
 
         const events = await fetchGammaEvents({
             limit,
@@ -45,8 +44,6 @@ export async function GET(request: NextRequest) {
             featured,
             order,
             ascending,
-            volume_min,
-            liquidity_min,
         });
 
         return NextResponse.json(events, {

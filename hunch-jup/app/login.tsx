@@ -326,15 +326,13 @@ export default function LoginScreen() {
         oauth.login({ provider });
     };
 
-    const isRedirectingOrSyncing = loadingProvider !== null || isSyncing;
-
-    // Never show drawer when redirecting, syncing, or authenticated
-    const shouldShowDrawer = drawerOpen && !backendUser && !isRedirectingOrSyncing;
+    // Block drawer only during active OAuth redirect, not during background backend sync
+    const shouldShowDrawer = drawerOpen && !backendUser && loadingProvider === null;
 
     return (
         <View style={styles.container}>
-            {/* Full-screen loading overlay when returning from OAuth or syncing */}
-            {isRedirectingOrSyncing && (
+            {/* Full-screen loading overlay only during active OAuth provider redirect */}
+            {loadingProvider !== null && (
                 <View style={styles.loadingOverlay} pointerEvents="box-only">
                     <ActivityIndicator size="large" color="#000" />
                     <Text style={styles.loadingOverlayText}>Signing you in...</Text>

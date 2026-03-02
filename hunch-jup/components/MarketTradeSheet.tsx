@@ -5,11 +5,10 @@ import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
 import { api, getEventDetails, marketsApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
-import { executeTrade, fromRawAmount, requestOrder, toRawAmount, USDC_MINT } from "@/lib/tradeService";
+import { executeTrade, fromRawAmount, requestOrder, toRawAmount } from "@/lib/tradeService";
+import { fetchPolygonUsdcBalance } from "@/lib/polygon";
 import { User as BackendUser, CandleData, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
-// Connection is optional — only used for legacy Solana balance checking
-type Connection = any;
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -182,7 +181,6 @@ export interface MarketTradeSheetProps {
     candles?: CandleData[];
     backendUser: BackendUser | null;
     walletProvider: any;
-    connection?: Connection;
     initialSide?: 'yes' | 'no';
     eventTitle?: string;
 }
@@ -196,7 +194,6 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
     candles: initialCandles,
     backendUser,
     walletProvider,
-    connection,
     initialSide = 'yes',
     eventTitle: propEventTitle,
 }) => {
@@ -329,20 +326,19 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
         fetchEventTitle();
     }, [visible, market?.eventTicker, propEventTitle]);
 
-    // Fetch USDC Balance (EVM/Polygon)
+    // Fetch USDC Balance (Polygon)
     useEffect(() => {
         if (!visible || !backendUser?.walletAddress) return;
         const fetchBalance = async () => {
             try {
-                // TODO: Implement EVM USDC balance check via walletProvider
-                // For now, set a placeholder or skip
-                setUsdcBalance(null);
+                const balance = await fetchPolygonUsdcBalance(backendUser.walletAddress);
+                setUsdcBalance(balance);
             } catch (e) {
                 console.error("Failed to load USDC balance", e);
             }
         };
         fetchBalance();
-    }, [visible, backendUser, walletProvider]);
+    }, [visible, backendUser]);
 
     const finalizeTrade = async (quote?: string) => {
         if (!lastTradeId) {
@@ -386,13 +382,14 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                     timeFilter === 'all'
                         ? Math.max(0, endTs - 365 * 24 * 60 * 60)
                         : Math.max(0, endTs - (selectedFilter?.seconds || 7 * 24 * 60 * 60));
-                const periodInterval = TIME_FILTER_INTERVALS[timeFilter];
-                const candles = await marketsApi.fetchCandlesticksByMint({
-                    marketTicker: market.ticker,
-                    seriesTicker: market.eventTicker,
+                const interval = TIME_FILTER_INTERVALS[timeFilter]; // 1=1m, 60=1h, 1440=1d
+
+                // Use Polymarket candlestick endpoint (conditionId = market.ticker)
+                const candles = await marketsApi.fetchPolymarketCandles({
+                    conditionId: market.ticker,
                     startTs,
                     endTs,
-                    periodInterval,
+                    interval,
                 });
                 setFilteredCandles(candles);
             } catch (error) {
@@ -455,7 +452,6 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
 
             const { signature, order } = await executeTrade({
                 provider: walletProvider,
-                connection,
                 userPublicKey: backendUser.walletAddress,
                 amount: rawAmount,
                 marketId: market.ticker,
@@ -636,8 +632,8 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                             </Text>
                                             <Text className="text-base font-bold text-txt-primary mb-1" numberOfLines={2}>
                                                 {selectedSide === 'yes'
-                                                    ? (market?.side_a?.label || market?.title || 'Yes')
-                                                    : (market?.side_b?.label || market?.title || 'No')}
+                                                    ? (market?.yesSubTitle || market?.title || 'Yes')
+                                                    : (market?.noSubTitle || market?.title || 'No')}
                                             </Text>
                                             <Text
                                                 className="text-2xl font-bold"
@@ -653,134 +649,134 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                     </View>
                                 </View>
 
-                                <ScrollView
-                                    showsVerticalScrollIndicator={false}
-                                    contentContainerStyle={{ paddingBottom: 16 }}
-                                    scrollEnabled={!isScrubbing && !isDraggingSheet.current}
-                                    onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
-                                    scrollEventThrottle={16}
-                                    bounces={false}
+                            <ScrollView
+                                showsVerticalScrollIndicator={false}
+                                contentContainerStyle={{ paddingBottom: 16 }}
+                                scrollEnabled={!isScrubbing && !isDraggingSheet.current}
+                                onScroll={(e) => { scrollOffsetRef.current = e.nativeEvent.contentOffset.y; }}
+                                scrollEventThrottle={16}
+                                bounces={false}
+                            >
+                                <View
+                                    ref={chartContainerRef}
+                                    onLayout={updateChartLayout}
+                                    className="h-[240px] rounded-2xl overflow-hidden mb-3"
+                                    onStartShouldSetResponder={() => true}
+                                    onStartShouldSetResponderCapture={() => true}
+                                    onMoveShouldSetResponder={() => true}
+                                    onMoveShouldSetResponderCapture={() => true}
+                                    onResponderGrant={(e) => handleScrubStart(e.nativeEvent.pageX)}
+                                    onResponderMove={(e) => triggerScrubHaptic(e.nativeEvent.pageX)}
+                                    onResponderRelease={handleScrubEnd}
+                                    onResponderTerminate={handleScrubEnd}
                                 >
-                                    <View
-                                        ref={chartContainerRef}
-                                        onLayout={updateChartLayout}
-                                        className="h-[240px] rounded-2xl overflow-hidden mb-3"
-                                        onStartShouldSetResponder={() => true}
-                                        onStartShouldSetResponderCapture={() => true}
-                                        onMoveShouldSetResponder={() => true}
-                                        onMoveShouldSetResponderCapture={() => true}
-                                        onResponderGrant={(e) => handleScrubStart(e.nativeEvent.pageX)}
-                                        onResponderMove={(e) => triggerScrubHaptic(e.nativeEvent.pageX)}
-                                        onResponderRelease={handleScrubEnd}
-                                        onResponderTerminate={handleScrubEnd}
-                                    >
-                                        {scrubTimestamp && (
-                                            <View className="absolute top-2 left-0 right-0 items-center z-10" pointerEvents="none">
-                                                <Text className="text-xs text-txt-secondary">{formatScrubTime(scrubTimestamp)}</Text>
-                                            </View>
-                                        )}
-                                        {chartCandles.length > 0 ? (
-                                            <View className="flex-1">
-                                                <LightChart
-                                                    candles={chartCandles}
-                                                    width={SCREEN_WIDTH - 40}
-                                                    height={SHEET_CHART_HEIGHT}
-                                                    colorByTrend={true}
-                                                    scrubIndex={scrubIndex}
-                                                    showFill={true}
-                                                    showGlow={false}
-                                                    strokeWidth={3}
-                                                />
-                                                {isLoadingCandles && (
-                                                    <View className="absolute top-2 right-2 p-1.5 rounded-full bg-white/10 backdrop-blur-sm">
-                                                        <ActivityIndicator size="small" color={Theme.accentSubtle} />
-                                                    </View>
-                                                )}
-                                            </View>
-                                        ) : isLoadingCandles ? (
-                                            <View className="flex-1 justify-center items-center gap-2">
-                                                <ActivityIndicator size="small" color={Theme.accentSubtle} />
-                                                <Text className="text-xs text-txt-disabled">Loading chart...</Text>
-                                            </View>
-                                        ) : (
-                                            <View className="flex-1 justify-center items-center gap-2">
-                                                <ActivityIndicator size="small" color={Theme.textDisabled} />
-                                                <Text className="text-xs text-txt-disabled">No data available</Text>
-                                            </View>
-                                        )}
-                                    </View>
-
-                                    <View className="flex-row items-center justify-center gap-2 mb-2">
-                                        {TIME_FILTER_OPTIONS.map((option) => (
-                                            <TouchableOpacity
-                                                key={option.key}
-                                                className="px-3 py-1.5 rounded-full"
-                                                onPress={() => { setTimeFilter(option.key); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                                                activeOpacity={0.6}
-                                            >
-                                                <Text className={`text-xs font-semibold ${timeFilter === option.key ? '' : 'text-txt-disabled'}`} style={timeFilter === option.key ? { color: Theme.accentSubtle } : {}}>
-                                                    {option.label}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-
-                                    {/* Yes/No Toggle */}
-                                    <View className="flex-row gap-3 mb-4 px-4">
-                                        <TouchableOpacity
-                                            className={`flex-1 py-3.5 rounded-2xl border-[1.5px] ${selectedSide === 'yes' ? 'border-[#10ff1f]' : 'bg-gray-50 border-gray-200'}`}
-                                            style={selectedSide === 'yes' ? { backgroundColor: '#34f011' } : undefined}
-                                            onPress={() => { setSelectedSide('yes'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
-                                            activeOpacity={0.7}
-                                        >
-                                            <Text className="text-center font-bold text-2xl" style={{ color: selectedSide === 'yes' ? '#FFFFFF' : Theme.textDisabled }}>YES</Text>
-                                        </TouchableOpacity>
-                                        <TouchableOpacity
-                                            className={`flex-1 py-3.5 rounded-2xl border-[1.5px] ${selectedSide === 'no' ? 'border-[#FF10F0]' : 'bg-gray-50 border-gray-200'}`}
-                                            style={selectedSide === 'no' ? { backgroundColor: '#FF10F0' } : undefined}
-                                            onPress={() => { setSelectedSide('no'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
-                                            activeOpacity={0.7}
-                                        >
-                                            <Text className="text-center font-bold text-2xl" style={{ color: selectedSide === 'no' ? '#FFFFFF' : Theme.textDisabled }}>NO</Text>
-                                        </TouchableOpacity>
-                                    </View>
-
-                                    <View className="px-4">
-                                        <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">Amount</Text>
-                                        <View className={`flex-row items-center rounded-2xl px-4 py-1 ${!amount || amount === '0' || amount === '0.00' ? 'bg-[#F3F4F6]' : 'bg-transparent'}`}>
-                                            <Text className="text-txt-secondary text-2xl font-semibold">$</Text>
-                                            <Pressable className="flex-1" onPress={() => setAmountKeypadOpen(true)}>
-                                                <Text className={`${!amount || amount === '0' || amount === '0.00' ? 'text-gray-300' : 'text-txt-primary'} text-[24px] font-bold py-2 pl-1.5`}>
-                                                    {amount || "0.00"}
-                                                </Text>
-                                            </Pressable>
-                                            {betAmount > 0 && !tradeError && (
-                                                <View className="items-end">
-                                                    <Text className="text-txt-secondary text-[10px] uppercase">To Win</Text>
-                                                    {isFetchingQuote ? (
-                                                        <ActivityIndicator size="small" color={Theme.accent} />
-                                                    ) : (
-                                                        <Text className="text-[#52e717] text-2xl font-extrabold">
-                                                            ${quoteOutAmount ? (quoteOutAmount / 1000000).toFixed(2) : (betAmount * (100 / estimatedProbability)).toFixed(2)}
-                                                        </Text>
-                                                    )}
+                                    {scrubTimestamp && (
+                                        <View className="absolute top-2 left-0 right-0 items-center z-10" pointerEvents="none">
+                                            <Text className="text-xs text-txt-secondary">{formatScrubTime(scrubTimestamp)}</Text>
+                                        </View>
+                                    )}
+                                    {chartCandles.length > 0 ? (
+                                        <View className="flex-1">
+                                            <LightChart
+                                                candles={chartCandles}
+                                                width={SCREEN_WIDTH - 40}
+                                                height={SHEET_CHART_HEIGHT}
+                                                colorByTrend={true}
+                                                scrubIndex={scrubIndex}
+                                                showFill={true}
+                                                showGlow={false}
+                                                strokeWidth={3}
+                                            />
+                                            {isLoadingCandles && (
+                                                <View className="absolute top-2 right-2 p-1.5 rounded-full bg-white/10 backdrop-blur-sm">
+                                                    <ActivityIndicator size="small" color={Theme.accentSubtle} />
                                                 </View>
                                             )}
                                         </View>
-                                        {tradeError && (
-                                            <Text className="text-[#FF10F0] text-xs font-medium mt-1 ml-1">{tradeError}</Text>
+                                    ) : isLoadingCandles ? (
+                                        <View className="flex-1 justify-center items-center gap-2">
+                                            <ActivityIndicator size="small" color={Theme.accentSubtle} />
+                                            <Text className="text-xs text-txt-disabled">Loading chart...</Text>
+                                        </View>
+                                    ) : (
+                                        <View className="flex-1 justify-center items-center gap-2">
+                                            <ActivityIndicator size="small" color={Theme.textDisabled} />
+                                            <Text className="text-xs text-txt-disabled">No data available</Text>
+                                        </View>
+                                    )}
+                                </View>
+
+                                <View className="flex-row items-center justify-center gap-2 mb-2">
+                                    {TIME_FILTER_OPTIONS.map((option) => (
+                                        <TouchableOpacity
+                                            key={option.key}
+                                            className="px-3 py-1.5 rounded-full"
+                                            onPress={() => { setTimeFilter(option.key); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                                            activeOpacity={0.6}
+                                        >
+                                            <Text className={`text-xs font-semibold ${timeFilter === option.key ? '' : 'text-txt-disabled'}`} style={timeFilter === option.key ? { color: Theme.accentSubtle } : {}}>
+                                                {option.label}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+
+                                {/* Yes/No Toggle */}
+                                <View className="flex-row gap-3 mb-4 px-4">
+                                    <TouchableOpacity
+                                        className={`flex-1 py-3.5 rounded-2xl border-[1.5px] ${selectedSide === 'yes' ? 'border-[#10ff1f]' : 'bg-gray-50 border-gray-200'}`}
+                                        style={selectedSide === 'yes' ? { backgroundColor: '#34f011' } : undefined}
+                                        onPress={() => { setSelectedSide('yes'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Text className="text-center font-bold text-2xl" style={{ color: selectedSide === 'yes' ? '#FFFFFF' : Theme.textDisabled }}>YES</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        className={`flex-1 py-3.5 rounded-2xl border-[1.5px] ${selectedSide === 'no' ? 'border-[#FF10F0]' : 'bg-gray-50 border-gray-200'}`}
+                                        style={selectedSide === 'no' ? { backgroundColor: '#FF10F0' } : undefined}
+                                        onPress={() => { setSelectedSide('no'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); }}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Text className="text-center font-bold text-2xl" style={{ color: selectedSide === 'no' ? '#FFFFFF' : Theme.textDisabled }}>NO</Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                <View className="px-4">
+                                    <Text className="text-xs font-bold text-txt-secondary uppercase tracking-wide mb-2">Amount</Text>
+                                    <View className={`flex-row items-center rounded-2xl px-4 py-1 ${!amount || amount === '0' || amount === '0.00' ? 'bg-[#F3F4F6]' : 'bg-transparent'}`}>
+                                        <Text className="text-txt-secondary text-2xl font-semibold">$</Text>
+                                        <Pressable className="flex-1" onPress={() => setAmountKeypadOpen(true)}>
+                                            <Text className={`${!amount || amount === '0' || amount === '0.00' ? 'text-gray-300' : 'text-txt-primary'} text-[24px] font-bold py-2 pl-1.5`}>
+                                                {amount || "0.00"}
+                                            </Text>
+                                        </Pressable>
+                                        {betAmount > 0 && !tradeError && (
+                                            <View className="items-end">
+                                                <Text className="text-txt-secondary text-[10px] uppercase">To Win</Text>
+                                                {isFetchingQuote ? (
+                                                    <ActivityIndicator size="small" color={Theme.accent} />
+                                                ) : (
+                                                    <Text className="text-[#52e717] text-2xl font-extrabold">
+                                                        ${quoteOutAmount ? (quoteOutAmount / 1000000).toFixed(2) : (betAmount * (100 / estimatedProbability)).toFixed(2)}
+                                                    </Text>
+                                                )}
+                                            </View>
                                         )}
                                     </View>
-                                    <View className="px-4 mt-6">
-                                        <SwipeToTrade
-                                            onSwipeComplete={handleTrade}
-                                            isLoading={isTrading}
-                                            disabled={isTrading || !amount || Number(amount) <= 0 || !!tradeError || (usdcBalance !== null && parseFloat(amount) > usdcBalance)}
-                                            amount={amount}
-                                            isInsufficientBalance={usdcBalance !== null && !!amount && parseFloat(amount) > usdcBalance}
-                                        />
-                                    </View>
-                                </ScrollView>
+                                    {tradeError && (
+                                        <Text className="text-[#FF10F0] text-xs font-medium mt-1 ml-1">{tradeError}</Text>
+                                    )}
+                                </View>
+                                <View className="px-4 mt-6">
+                                    <SwipeToTrade
+                                        onSwipeComplete={handleTrade}
+                                        isLoading={isTrading}
+                                        disabled={isTrading || !amount || Number(amount) <= 0 || !!tradeError || (usdcBalance !== null && parseFloat(amount) > usdcBalance)}
+                                        amount={amount}
+                                        isInsufficientBalance={usdcBalance !== null && !!amount && parseFloat(amount) > usdcBalance}
+                                    />
+                                </View>
+                            </ScrollView>
                             </View>
                         </Pressable>
                     </Animated.View>

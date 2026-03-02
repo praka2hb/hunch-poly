@@ -3,11 +3,10 @@ import { EventDetailSkeleton } from '@/components/skeletons';
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { marketsApi } from "@/lib/api";
-import { isNumericOutcomeMarket } from "@/lib/marketUtils";
+import { formatVolume, isNumericOutcomeMarket } from "@/lib/marketUtils";
 import { Event, Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedEthereumWallet } from "@privy-io/expo";
-
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -29,7 +28,7 @@ const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => voi
   const yesBid = item.yesBid ? parseFloat(item.yesBid) * 100 : null;
   const yesAsk = item.yesAsk ? parseFloat(item.yesAsk) * 100 : null;
   const probability = yesBid && yesAsk ? (yesBid + yesAsk) / 2 : null;
-  const displayTitle = item.side_a?.label || item.title;
+  const displayTitle = item.yesSubTitle || item.title;
   const marketColor = color || Theme.textPrimary;
 
   // Darker versions of market colors for odds text
@@ -81,7 +80,7 @@ const MarketCard = ({ item, onPress, color }: { item: Market; onPress: () => voi
 
           {item.volume != null && item.volume > 0 && (
             <Text className="text-lg font-medium text-txt-disabled mt-1.5" style={{ opacity: 0.6 }}>
-              ${(item.volume / 1000).toFixed(1)}K vol
+              {formatVolume(item.volume)} vol
             </Text>
           )}
         </View>
@@ -117,15 +116,14 @@ export default function EventDetailScreen() {
     setHeroImageError(false);
   }, [event?.imageUrl]);
 
-  // EVM wallet — no Solana connection needed
-  const evmWallet = wallets?.[0];
+  const ethereumWallet = wallets?.[0];
 
   // Get wallet provider
   useEffect(() => {
     const getProvider = async () => {
-      if (evmWallet) {
+      if (ethereumWallet) {
         try {
-          const provider = await evmWallet.getProvider();
+          const provider = await ethereumWallet.getProvider();
           setWalletProvider(provider);
         } catch (error) {
           console.error('Failed to get wallet provider:', error);
@@ -133,7 +131,7 @@ export default function EventDetailScreen() {
       }
     };
     getProvider();
-  }, [evmWallet]);
+  }, [ethereumWallet]);
 
   useEffect(() => {
     if (ticker) {
@@ -181,7 +179,7 @@ export default function EventDetailScreen() {
 
   const topMarketsForCharts = useMemo(() => {
     return top4ByOdds.filter(
-      m => m.condition_id
+      m => m.yesMint || (m.accounts && Object.values(m.accounts).some(a => a?.yesMint))
     );
   }, [top4ByOdds]);
 
@@ -283,9 +281,9 @@ export default function EventDetailScreen() {
               style={StyleSheet.absoluteFillObject}
               pointerEvents="none"
             />
-            {event.tags && event.tags.length > 0 && (
+            {event.competition && (
               <View className="absolute bottom-3 left-4 px-2.5 py-1 rounded-lg bg-black/40">
-                <Text className="text-[11px] font-bold text-white tracking-wide">{event.tags[0]}</Text>
+                <Text className="text-[11px] font-bold text-white tracking-wide">{event.competition}</Text>
               </View>
             )}
           </Animated.View>
@@ -316,10 +314,10 @@ export default function EventDetailScreen() {
             {(() => {
               // Get the earliest close/expiration time from active markets or event
               const marketCloseTimes = activeMarkets
-                .map(m => m.close_time)
+                .map(m => m.closeTime || m.expirationTime)
                 .filter((t): t is number => t != null && t > 0);
 
-              const eventCloseTime = event.end_time;
+              const eventCloseTime = event.closeTime;
               const allCloseTimes = [...marketCloseTimes];
               if (eventCloseTime) allCloseTimes.push(eventCloseTime);
 

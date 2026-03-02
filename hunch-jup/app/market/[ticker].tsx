@@ -8,7 +8,6 @@ import { executeTrade, toRawAmount } from "@/lib/tradeService";
 import { Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedEthereumWallet } from "@privy-io/expo";
-
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -31,8 +30,7 @@ export default function MarketDetailScreen() {
   const [showQuoteSheet, setShowQuoteSheet] = useState(false);
   const [lastTradeId, setLastTradeId] = useState<string | null>(null);
 
-  // EVM wallet — no Solana connection needed
-  const evmWallet = wallets?.[0];
+  const ethereumWallet = wallets?.[0];
 
   useEffect(() => {
     if (ticker) loadMarketDetails();
@@ -54,7 +52,7 @@ export default function MarketDetailScreen() {
 
   const handleTrade = async () => {
     if (!market || !backendUser || !amount || parseFloat(amount) <= 0) return;
-    if (!evmWallet) {
+    if (!ethereumWallet) {
       setTradeError("Wallet not connected");
       return;
     }
@@ -74,7 +72,7 @@ export default function MarketDetailScreen() {
       const rawAmount = toRawAmount(parseFloat(amount), 6);
 
       // Get wallet provider
-      const provider = await evmWallet.getProvider();
+      const provider = await ethereumWallet.getProvider();
 
       // Execute the trade: get quote, sign, send, wait for confirmation
       const { signature, order } = await executeTrade({
@@ -221,16 +219,16 @@ export default function MarketDetailScreen() {
               </View>
             </View>
             <Text className="text-2xl font-bold text-txt-primary mb-2.5 leading-8">{market.title}</Text>
-            {market.side_a?.label && (
+            {market.yesSubTitle && (
               <Text className="text-sm text-txt-secondary mb-2.5">
-                <Text className="font-bold text-status-success">Yes</Text> = {market.side_a.label}
+                <Text className="font-bold text-status-success">Yes</Text> = {market.yesSubTitle}
               </Text>
             )}
-            {market.close_time && (
+            {market.closeTime && (
               <View className="flex-row items-center gap-1.5">
                 <Ionicons name="time-outline" size={14} color={Theme.textDisabled} />
                 <Text className="text-[13px] text-txt-disabled">
-                  Closes {new Date(market.close_time * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  Closes {new Date(market.closeTime * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </Text>
               </View>
             )}
@@ -380,17 +378,17 @@ export default function MarketDetailScreen() {
                 <Text className="text-txt-disabled text-[11px] font-semibold uppercase tracking-wide mb-1">Volume</Text>
                 <Text className="text-txt-primary text-sm font-semibold">${((market.volume || 0) / 1000).toFixed(1)}K</Text>
               </View>
-              {market.description && (
+              {market.openInterest && (
                 <View className="bg-app-elevated rounded-[10px] p-3 min-w-[30%] flex-1">
-                  <Text className="text-txt-disabled text-[11px] font-semibold uppercase tracking-wide mb-1">Liquidity</Text>
-                  <Text className="text-txt-primary text-sm font-semibold">—</Text>
+                  <Text className="text-txt-disabled text-[11px] font-semibold uppercase tracking-wide mb-1">Open Interest</Text>
+                  <Text className="text-txt-primary text-sm font-semibold">${(market.openInterest / 1000).toFixed(1)}K</Text>
                 </View>
               )}
             </View>
-            {market.description && (
+            {market.rulesPrimary && (
               <View className="pt-3.5 border-t border-border">
                 <Text className="text-txt-secondary text-xs font-semibold mb-2">Rules</Text>
-                <Text className="text-txt-primary text-[13px] leading-5">{market.description}</Text>
+                <Text className="text-txt-primary text-[13px] leading-5">{market.rulesPrimary}</Text>
               </View>
             )}
           </View>

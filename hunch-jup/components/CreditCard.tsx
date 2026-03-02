@@ -1,7 +1,6 @@
 import { sendUSDC } from "@/lib/tradeService";
 import { Ionicons } from "@expo/vector-icons";
-import { useFundSolanaWallet } from '@privy-io/expo/ui';
-import { Connection } from "@solana/web3.js";
+import { useFundWallet } from '@privy-io/expo/ui';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from "expo-linear-gradient";
 import { useRef, useState } from "react";
@@ -22,23 +21,21 @@ interface CreditCardProps {
     tradesCount: number;
     balance?: number;
     walletAddress?: string;
-    /** Embedded Solana wallet instance (Privy) */
+    /** Embedded Ethereum wallet instance (Privy) */
     wallet?: any;
     /** Privy wallet provider — used for signing USDC transfers */
     walletProvider?: any;
-    /** Solana connection — used for sending transfer tx */
-    connection?: Connection;
     /** Called with the withdrawn amount immediately after tx confirms */
     onWithdrawSuccess?: (amount: number) => void;
 }
 
-export default function CreditCard({ tradesCount, balance = 0, walletAddress, wallet, walletProvider, connection, onWithdrawSuccess }: CreditCardProps) {
+export default function CreditCard({ tradesCount, balance = 0, walletAddress, wallet, walletProvider, onWithdrawSuccess }: CreditCardProps) {
     const [isFlipped, setIsFlipped] = useState(false);
     const [copied, setCopied] = useState(false);
     const [withdrawOpen, setWithdrawOpen] = useState(false);
     const [withdrawSubmitting, setWithdrawSubmitting] = useState(false);
     const flipAnimation = useRef(new Animated.Value(0)).current;
-    const { fundWallet } = useFundSolanaWallet();
+    const { fundWallet } = useFundWallet();
 
     const toggleFlip = () => {
         Animated.spring(flipAnimation, {
@@ -245,8 +242,8 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress, wa
                 submitting={withdrawSubmitting}
                 balance={balance}
                 onSubmit={async ({ toAddress, amount }) => {
-                    if (!walletAddress || !walletProvider || !connection) {
-                        console.warn('CreditCard: walletProvider or connection not provided, cannot withdraw');
+                    if (!walletAddress || !walletProvider) {
+                        console.warn('CreditCard: walletProvider not provided, cannot withdraw');
                         setWithdrawOpen(false);
                         return;
                     }
@@ -255,7 +252,6 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress, wa
                         await sendUSDC({
                             provider: walletProvider,
                             wallet,
-                            connection,
                             fromAddress: walletAddress,
                             toAddress,
                             amount,

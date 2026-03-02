@@ -85,12 +85,11 @@ export const EventChartCard: React.FC<EventChartCardProps> = ({
             try {
                 const endTs = Math.floor(Date.now() / 1000);
                 const startTs = Math.max(0, endTs - 7 * 24 * 60 * 60);
-                const data = await marketsApi.fetchCandlesticksByMint({
-                    ticker: market.ticker,
-                    seriesTicker: market.eventTicker,
+                const data = await marketsApi.fetchPolymarketCandles({
+                    conditionId: market.ticker,
                     startTs,
                     endTs,
-                    periodInterval: 60,
+                    interval: 60,
                 });
                 if (!cancelled) {
                     setCandles(data);

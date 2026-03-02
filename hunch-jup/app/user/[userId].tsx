@@ -11,10 +11,10 @@ import { useUser } from "@/contexts/UserContext";
 import { useCopyTrading } from "@/hooks/useCopyTrading";
 import { api, getEventDetails, getMarketDetails, marketsApi } from "@/lib/api";
 import { executeTrade, sendUSDC, toRawAmount } from "@/lib/tradeService";
+import { fetchPolygonUsdcBalance } from "@/lib/polygon";
 import { AggregatedPosition, CandleData, Event, Market, Trade, User } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedEthereumWallet } from "@privy-io/expo";
-
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -223,9 +223,9 @@ const TradeItem = ({
                             </View>
                         </View>
 
-                        {(trade.side === 'yes' ? market.side_a?.label : market.side_b?.label) ? (
+                        {(trade.side === 'yes' ? market.yesSubTitle : market.noSubTitle) ? (
                             <Text className="text-sm italic text-txt-secondary mt-1" numberOfLines={1}>
-                                on {trade.side === 'yes' ? market.side_a?.label : market.side_b?.label}
+                                on {trade.side === 'yes' ? market.yesSubTitle : market.noSubTitle}
                             </Text>
                         ) : null}
 
@@ -284,6 +284,7 @@ export default function UserProfileScreen() {
     const { userId } = useLocalSearchParams<{ userId: string }>();
     const { backendUser: currentUser } = useUser();
     const { wallets } = useEmbeddedEthereumWallet();
+    const ethereumWallet = wallets?.[0];
     const insets = useSafeAreaInsets();
 
     const [profile, setProfile] = useState<User | null>(null);
@@ -424,15 +425,12 @@ export default function UserProfileScreen() {
     const loadedEventTickers = useRef(new Set<string>());
     const loadedCandleTickers = useRef(new Set<string>());
 
-    // EVM wallet — no Solana connection needed
-    const evmWallet = wallets?.[0];
-
     // Get wallet provider
     useEffect(() => {
         const getProvider = async () => {
-            if (evmWallet) {
+            if (ethereumWallet) {
                 try {
-                    const provider = await evmWallet.getProvider();
+                    const provider = await ethereumWallet.getProvider();
                     setWalletProvider(provider);
                 } catch (e) {
                     console.error('Failed to get wallet provider:', e);
@@ -440,7 +438,7 @@ export default function UserProfileScreen() {
             }
         };
         getProvider();
-    }, [evmWallet]);
+    }, [ethereumWallet]);
 
     const animateToTab = useCallback((tab: TabType) => {
         Animated.spring(slideAnim, {
@@ -489,8 +487,8 @@ export default function UserProfileScreen() {
             return;
         }
         try {
-            // TODO: Implement EVM/Polygon USDC balance check
-            setUsdcBalance(0);
+            const balance = await fetchPolygonUsdcBalance(currentUser.walletAddress);
+            setUsdcBalance(balance);
         } catch (error) {
             console.error("Failed to load USDC balance:", error);
             setUsdcBalance(0);
@@ -645,7 +643,7 @@ export default function UserProfileScreen() {
 
     // Handle sell trade execution - sells all tokens for this position
     const handleSell = async () => {
-        if (!selectedPosition || !currentUser || !evmWallet) {
+        if (!selectedPosition || !currentUser || !ethereumWallet) {
             throw new Error('Missing required data for sell');
         }
 
@@ -671,7 +669,7 @@ export default function UserProfileScreen() {
             });
 
             const rawAmount = toRawAmount(tokensToSell, 6);
-            const provider = await evmWallet.getProvider();
+            const provider = await ethereumWallet.getProvider();
 
             const { signature, order } = await executeTrade({
                 provider,
@@ -763,7 +761,7 @@ export default function UserProfileScreen() {
             .filter((trade) => trade.marketDetails?.status === 'active')
             .map((trade) => ({
                 marketTicker: trade.marketTicker,
-                eventTicker: trade.marketDetails?.eventTicker ?? trade.eventTicker ?? undefined,
+                eventTicker: trade.marketDetails?.eventTicker || trade.eventTicker,
             }));
         const uniqueByTicker = new Map<string, string | undefined>();
         activeTrades.forEach(({ marketTicker, eventTicker }) => {
@@ -783,9 +781,8 @@ export default function UserProfileScreen() {
             const results = await Promise.all(
                 tickersToFetch.map(async ({ ticker, seriesTicker }) => ({
                     ticker,
-                    candles: await marketsApi.fetchCandlesticksByMint({
-                        ticker,
-                        seriesTicker: seriesTicker || undefined,
+                    candles: await marketsApi.fetchPolymarketCandles({
+                        conditionId: ticker,
                     }).catch(() => [] as CandleData[]),
                 }))
             );
@@ -819,7 +816,7 @@ export default function UserProfileScreen() {
                 tickers.forEach((t, i) => { if (events[i]?.title) next[t] = events[i].title; });
                 setEventTitleByTicker((prev) => ({ ...prev, ...next }));
             })
-            .catch(() => { });
+            .catch(() => {});
         return () => { cancelled = true; };
     }, [activePositions, previousPositions]);
 
@@ -950,12 +947,13 @@ export default function UserProfileScreen() {
                                 <View className="flex-1">
                                     <Text className="text-[11px] text-txt-secondary mb-0.5">Total PnL</Text>
                                     <Text
-                                        className={`text-[15px] font-semibold ${tradeStats.totalPnl > 0
-                                            ? 'text-green-500'
-                                            : tradeStats.totalPnl < 0
+                                        className={`text-[15px] font-semibold ${
+                                            tradeStats.totalPnl > 0
+                                                ? 'text-green-500'
+                                                : tradeStats.totalPnl < 0
                                                 ? 'text-[#FF10F0]'
                                                 : 'text-txt-primary'
-                                            }`}
+                                        }`}
                                     >
                                         {tradeStats.totalPnl === 0
                                             ? '$0'
@@ -990,27 +988,31 @@ export default function UserProfileScreen() {
                         <View className="mb-4">
                             <View className="flex-row bg-app-card rounded-2xl p-1 border border-border/40">
                                 <TouchableOpacity
-                                    className={`flex-1 py-2.5 rounded-xl items-center ${activeTab === 'active' ? 'bg-black' : ''
-                                        }`}
+                                    className={`flex-1 py-2.5 rounded-xl items-center ${
+                                        activeTab === 'active' ? 'bg-black' : ''
+                                    }`}
                                     onPress={() => animateToTab('active')}
                                     activeOpacity={0.85}
                                 >
                                     <Text
-                                        className={`text-sm font-semibold ${activeTab === 'active' ? 'text-white' : 'text-txt-secondary'
-                                            }`}
+                                        className={`text-sm font-semibold ${
+                                            activeTab === 'active' ? 'text-white' : 'text-txt-secondary'
+                                        }`}
                                     >
                                         Active ({activePositions.length})
                                     </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    className={`flex-1 py-2.5 rounded-xl items-center ${activeTab === 'previous' ? 'bg-black' : ''
-                                        }`}
+                                    className={`flex-1 py-2.5 rounded-xl items-center ${
+                                        activeTab === 'previous' ? 'bg-black' : ''
+                                    }`}
                                     onPress={() => animateToTab('previous')}
                                     activeOpacity={0.85}
                                 >
                                     <Text
-                                        className={`text-sm font-semibold ${activeTab === 'previous' ? 'text-white' : 'text-txt-secondary'
-                                            }`}
+                                        className={`text-sm font-semibold ${
+                                            activeTab === 'previous' ? 'text-white' : 'text-txt-secondary'
+                                        }`}
                                     >
                                         Previous ({previousPositions.length})
                                     </Text>
@@ -1189,13 +1191,13 @@ export default function UserProfileScreen() {
                     recipientAddress={profile.walletAddress}
                     recipientName={username}
                     onSubmit={async ({ toAddress, amount }) => {
-                        if (!currentUser || !evmWallet) return;
+                        if (!currentUser || !ethereumWallet) return;
                         try {
                             setSendSubmitting(true);
-                            const provider = await evmWallet.getProvider();
+                            const provider = await ethereumWallet.getProvider();
                             await sendUSDC({
                                 provider,
-                                wallet: evmWallet,
+                                wallet: ethereumWallet,
                                 fromAddress: currentUser.walletAddress,
                                 toAddress,
                                 amount,

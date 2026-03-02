@@ -12,7 +12,6 @@ import { User as BackendUser, CandleData, Event, EventEvidence, Market, Trade } 
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedEthereumWallet } from "@privy-io/expo";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -167,7 +166,7 @@ const FeedCard = ({
 }) => {
     const isYes = item.side === 'yes';
     const market = item.marketDetails;
-    const subtitle = isYes ? market?.side_a?.label : market?.side_b?.label;
+    const subtitle = isYes ? market?.yesSubTitle : market?.noSubTitle;
     const hasQuote = item.quote && item.quote.trim().length > 0;
     const avatarUrl = item.user?.avatarUrl?.replace('_normal', '');
     const totalBought = Number.parseFloat(item.amount || '0');
@@ -336,16 +335,15 @@ export default function SocialScreen() {
     const { wallets } = useEmbeddedEthereumWallet();
     const insets = useSafeAreaInsets();
 
-    // EVM wallet for trading
-    const evmWallet = wallets?.[0];
+    const ethereumWallet = wallets?.[0];
     const [walletProvider, setWalletProvider] = useState<any>(null);
 
     // Get wallet provider
     useEffect(() => {
         const getProvider = async () => {
-            if (evmWallet) {
+            if (ethereumWallet) {
                 try {
-                    const provider = await evmWallet.getProvider();
+                    const provider = await ethereumWallet.getProvider();
                     setWalletProvider(provider);
                 } catch (e) {
                     console.error('Failed to get wallet provider:', e);
@@ -353,7 +351,7 @@ export default function SocialScreen() {
             }
         };
         getProvider();
-    }, [evmWallet]);
+    }, [ethereumWallet]);
 
     const [feedItemsByMode, setFeedItemsByMode] = useState<{ global: FeedItem[]; following: FeedItem[] }>({
         global: [],
@@ -510,9 +508,8 @@ export default function SocialScreen() {
             toHydrate.map(async (item) => {
                 const [marketDetails, candles] = await Promise.all([
                     getMarketDetails(item.marketTicker),
-                    marketsApi.fetchCandlesticksByMint({
-                        ticker: item.marketTicker,
-                        seriesTicker: item.eventTicker,
+                    marketsApi.fetchPolymarketCandles({
+                        conditionId: item.marketTicker,
                     }).catch(() => [] as CandleData[]),
                 ]);
                 return { item, marketDetails, candles };
@@ -632,16 +629,16 @@ export default function SocialScreen() {
                 (event.markets || []).forEach(market => {
                     const marketTitle = market.title?.toLowerCase() || '';
                     const marketSubtitle = market.subtitle?.toLowerCase() || '';
-                    const yesSubtitle = market.side_a?.label?.toLowerCase() || '';
-                    const noSubtitle = market.side_b?.label?.toLowerCase() || '';
+                    const yesSubtitle = market.yesSubTitle?.toLowerCase() || '';
+                    const noSubtitle = market.noSubTitle?.toLowerCase() || '';
                     const marketMatchesQuery =
                         marketTitle.includes(normalizedQuery) ||
                         marketSubtitle.includes(normalizedQuery) ||
                         yesSubtitle.includes(normalizedQuery) ||
                         noSubtitle.includes(normalizedQuery);
 
-                    if (marketMatchesQuery && !seenMarkets.has(market.ticker || market.market_slug)) {
-                        seenMarkets.add(market.ticker || market.market_slug);
+                    if (marketMatchesQuery && !seenMarkets.has(market.ticker)) {
+                        seenMarkets.add(market.ticker);
                         marketMatches.push({ type: 'market', market, event });
                     }
                 });
@@ -1116,7 +1113,7 @@ export default function SocialScreen() {
                                             <Text className="text-[13px] text-txt-disabled" numberOfLines={1}>
                                                 {entry.item.type === 'event'
                                                     ? (entry.item.event.subtitle || 'Event')
-                                                    : (entry.item.market.subtitle || entry.item.market.side_a?.label || entry.item.market.side_b?.label || 'Market')}
+                                                    : (entry.item.market.subtitle || entry.item.market.yesSubTitle || entry.item.market.noSubTitle || 'Market')}
                                             </Text>
                                             {entry.item.type === 'market' && entry.item.event?.title ? (
                                                 <Text className="text-[11px] text-txt-secondary mt-1" numberOfLines={1}>

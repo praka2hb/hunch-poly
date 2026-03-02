@@ -1,5 +1,5 @@
 import { Theme } from "@/constants/theme";
-import { formatPercent } from "@/lib/marketUtils";
+import { formatPercent, formatVolume } from "@/lib/marketUtils";
 import { Market } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -23,6 +23,11 @@ export function MarketCard({ item, onPress, onLongPress, eventTitle }: MarketCar
   const question = eventTitle || item.title;
   const answer = item.yesSubTitle || item.title;
   const yesBid = item.yesBid ? parseFloat(item.yesBid) * 100 : null;
+
+  // Guard: don't render dead markets
+  if (item.isLive === false) return null;
+  if (yesBid !== null && (yesBid < 2 || yesBid > 98)) return null;
+
   const oddsIncreasing = yesBid !== null && yesBid >= 50;
   const oddsColor = yesBid === null ? Theme.textPrimary : oddsIncreasing ? '#32de12' : Theme.chartNegative;
 
@@ -81,7 +86,7 @@ export function MarketCard({ item, onPress, onLongPress, eventTitle }: MarketCar
           )}
         </View>
 
-        {/* Center - Question + Answer */}
+        {/* Center - Question + Volume */}
         <View className="flex-1 min-w-0 justify-center py-0.5">
           <Text
             className="text-[15px] font-medium text-txt-primary leading-5"
@@ -89,18 +94,23 @@ export function MarketCard({ item, onPress, onLongPress, eventTitle }: MarketCar
           >
             {question}
           </Text>
-          <Text
-            className="text-[18px] text-txt-secondary mt-4"
-            numberOfLines={2}
-          >
-            {answer}
-          </Text>
+          {item.volume ? (
+            <View className="flex-row items-center mt-2 gap-1">
+              <Ionicons name="trending-up-outline" size={12} color={Theme.textDisabled} />
+              <Text className="text-[12px] text-txt-disabled">
+                {formatVolume(item.volume)} vol
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Right - Yes odds: green if ≥50%, pink if <50% */}
-        <View className="justify-center">
+        <View className="justify-center items-center">
           <Text className="text-[24px] font-bold" style={{ color: oddsColor }}>
             {yesBid !== null ? formatPercent(item.yesBid) : "—"}
+          </Text>
+          <Text className="text-[11px] font-medium text-txt-disabled mt-0.5">
+            {yesBid !== null && yesBid >= 50 ? 'Yes' : yesBid !== null ? 'Yes' : ''}
           </Text>
         </View>
       </View>

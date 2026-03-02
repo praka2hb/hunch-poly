@@ -1,777 +1,150 @@
 {
-    "candlesticks": [
+  "events": [
+    {
+      "eventId": "khamenei-out-as-supreme-leader-of-iran-by-february-28",
+      "ticker": "khamenei-out-as-supreme-leader-of-iran-by-february-28",
+      "title": "Khamenei out as Supreme Leader of Iran by February 28?",
+      "volume": 93058762.408461,
+      "image_url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+      "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+      "metadata": {
+        "title": "Khamenei out as Supreme Leader of Iran by February 28?",
+        "subtitle": "This market will resolve to \"Yes\" if Iran's Supreme Leader, Ali Khamenei, is removed from power for any length of time between this market's creation and February 28, 2026, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nKhamenei will be considered to be removed from power if he resigns, is detained, or otherwise loses his position or is prevented from fulfilling his duties as Supreme Leader of Iran within this market's timeframe.\n\nThe primary resolution source for this market will be a consensus of credible reporting.",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+        "isLive": true
+      },
+      "markets": [
         {
-            "end_period_ts": 1771894800,
-            "open_interest": 5694369,
-            "open_interest_fp": "5694369.00",
-            "price": {
-                "close": null,
-                "high": null,
-                "low": null,
-                "max": null,
-                "mean": null,
-                "min": null,
-                "open": null,
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 0,
-            "volume_fp": "0.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771898400,
-            "open_interest": 5694369,
-            "open_interest_fp": "5694369.00",
-            "price": {
-                "close": null,
-                "high": null,
-                "low": null,
-                "max": null,
-                "mean": null,
-                "min": null,
-                "open": null,
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 0,
-            "volume_fp": "0.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771902000,
-            "open_interest": 5694369,
-            "open_interest_fp": "5694369.00",
-            "price": {
-                "close": null,
-                "high": null,
-                "low": null,
-                "max": null,
-                "mean": null,
-                "min": null,
-                "open": null,
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 0,
-            "volume_fp": "0.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771909200,
-            "open_interest": 5694369,
-            "open_interest_fp": "5694369.00",
-            "price": {
-                "close": null,
-                "high": null,
-                "low": null,
-                "max": null,
-                "mean": null,
-                "min": null,
-                "open": null,
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 0,
-            "volume_fp": "0.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771941600,
-            "open_interest": 5694379,
-            "open_interest_fp": "5694379.00",
-            "price": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "max": null,
-                "mean": 1,
-                "mean_dollars": "0.0100",
-                "min": null,
-                "open": 1,
-                "open_dollars": "0.0100",
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 10,
-            "volume_fp": "10.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771948800,
-            "open_interest": 5694379,
-            "open_interest_fp": "5694379.00",
-            "price": {
-                "close": null,
-                "high": null,
-                "low": null,
-                "max": null,
-                "mean": null,
-                "min": null,
-                "open": null,
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 0,
-            "volume_fp": "0.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771952400,
-            "open_interest": 5694379,
-            "open_interest_fp": "5694379.00",
-            "price": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "max": null,
-                "mean": 1,
-                "mean_dollars": "0.0100",
-                "min": null,
-                "open": 1,
-                "open_dollars": "0.0100",
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 2,
-            "volume_fp": "2.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771956000,
-            "open_interest": 5694379,
-            "open_interest_fp": "5694379.00",
-            "price": {
-                "close": null,
-                "high": null,
-                "low": null,
-                "max": null,
-                "mean": null,
-                "min": null,
-                "open": null,
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 0,
-            "volume_fp": "0.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771959600,
-            "open_interest": 5694379,
-            "open_interest_fp": "5694379.00",
-            "price": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "max": null,
-                "mean": 1,
-                "mean_dollars": "0.0100",
-                "min": null,
-                "open": 1,
-                "open_dollars": "0.0100",
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 300,
-            "volume_fp": "300.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771963200,
-            "open_interest": 5694379,
-            "open_interest_fp": "5694379.00",
-            "price": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "max": null,
-                "mean": 1,
-                "mean_dollars": "0.0100",
-                "min": null,
-                "open": 1,
-                "open_dollars": "0.0100",
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 3,
-            "volume_fp": "3.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771966800,
-            "open_interest": 5694379,
-            "open_interest_fp": "5694379.00",
-            "price": {
-                "close": null,
-                "high": null,
-                "low": null,
-                "max": null,
-                "mean": null,
-                "min": null,
-                "open": null,
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 0,
-            "volume_fp": "0.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771970400,
-            "open_interest": 5694659,
-            "open_interest_fp": "5694659.00",
-            "price": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "max": null,
-                "mean": 1,
-                "mean_dollars": "0.0100",
-                "min": null,
-                "open": 1,
-                "open_dollars": "0.0100",
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 280,
-            "volume_fp": "280.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771974000,
-            "open_interest": 5694659,
-            "open_interest_fp": "5694659.00",
-            "price": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "max": null,
-                "mean": 1,
-                "mean_dollars": "0.0100",
-                "min": null,
-                "open": 1,
-                "open_dollars": "0.0100",
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 20,
-            "volume_fp": "20.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771977600,
-            "open_interest": 5699659,
-            "open_interest_fp": "5699659.00",
-            "price": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "max": null,
-                "mean": 1,
-                "mean_dollars": "0.0100",
-                "min": null,
-                "open": 1,
-                "open_dollars": "0.0100",
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 5000,
-            "volume_fp": "5000.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771981200,
-            "open_interest": 5699659,
-            "open_interest_fp": "5699659.00",
-            "price": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "max": null,
-                "mean": 1,
-                "mean_dollars": "0.0100",
-                "min": null,
-                "open": 1,
-                "open_dollars": "0.0100",
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 163,
-            "volume_fp": "163.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771984800,
-            "open_interest": 5699759,
-            "open_interest_fp": "5699759.00",
-            "price": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "max": null,
-                "mean": 1,
-                "mean_dollars": "0.0100",
-                "min": null,
-                "open": 1,
-                "open_dollars": "0.0100",
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 100,
-            "volume_fp": "100.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771988400,
-            "open_interest": 5699759,
-            "open_interest_fp": "5699759.00",
-            "price": {
-                "close": null,
-                "high": null,
-                "low": null,
-                "max": null,
-                "mean": null,
-                "min": null,
-                "open": null,
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 0,
-            "volume_fp": "0.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771992000,
-            "open_interest": 5701925,
-            "open_interest_fp": "5701925.00",
-            "price": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "max": null,
-                "mean": 1,
-                "mean_dollars": "0.0100",
-                "min": null,
-                "open": 1,
-                "open_dollars": "0.0100",
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 2166,
-            "volume_fp": "2166.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
-        },
-        {
-            "end_period_ts": 1771995600,
-            "open_interest": 5701925,
-            "open_interest_fp": "5701925.00",
-            "price": {
-                "close": null,
-                "high": null,
-                "low": null,
-                "max": null,
-                "mean": null,
-                "min": null,
-                "open": null,
-                "previous": 1,
-                "previous_dollars": "0.0100"
-            },
-            "volume": 0,
-            "volume_fp": "0.00",
-            "yes_ask": {
-                "close": 1,
-                "close_dollars": "0.0100",
-                "high": 1,
-                "high_dollars": "0.0100",
-                "low": 1,
-                "low_dollars": "0.0100",
-                "open": 1,
-                "open_dollars": "0.0100"
-            },
-            "yes_bid": {
-                "close": 0,
-                "close_dollars": "0.0000",
-                "high": 0,
-                "high_dollars": "0.0000",
-                "low": 0,
-                "low_dollars": "0.0000",
-                "open": 0,
-                "open_dollars": "0.0000"
-            }
+          "marketId": "0xd4bbf7f6707c67beb736135ad32a41f6db41f8ae52d3ac4919650de9eeb94ed8",
+          "ticker": "0xd4bbf7f6707c67beb736135ad32a41f6db41f8ae52d3ac4919650de9eeb94ed8",
+          "title": "Khamenei out as Supreme Leader of Iran by February 28?",
+          "status": "active",
+          "volume": 93058762.408461,
+          "openInterest": null,
+          "image_url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+          "pricing": {
+            "buyYesPriceUsd": 0.9985,
+            "sellYesPriceUsd": 0.9985,
+            "buyNoPriceUsd": 0.0015,
+            "sellNoPriceUsd": 0.0015,
+            "volume": 93058762.408461,
+            "volume24h": 64290712.1463757,
+            "liquidityDollars": 4525896.4251,
+            "openInterest": null
+          },
+          "condition_id": "0xd4bbf7f6707c67beb736135ad32a41f6db41f8ae52d3ac4919650de9eeb94ed8",
+          "tokens": [
+            "39317885422026394259056328144566743331998444273202427934141325790266108570112",
+            "37975265083682450969967223199653164268542375291978582835346444673615244164455"
+          ],
+          "slug": "khamenei-out-as-supreme-leader-of-iran-by-february-28",
+          "metadata": {
+            "title": "Khamenei out as Supreme Leader of Iran by February 28?",
+            "description": "This market will resolve to \"Yes\" if Iran's Supreme Leader, Ali Khamenei, is removed from power for any length of time between this market's creation and February 28, 2026, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nKhamenei will be considered to be removed from power if he resigns, is detained, or otherwise loses his position or is prevented from fulfilling his duties as Supreme Leader of Iran within this market's timeframe.\n\nThe primary resolution source for this market will be a consensus of credible reporting.",
+            "isTradable": true,
+            "closeTime": 1772236800000
+          }
         }
-    ],
-    "ticker": "KXFEDCHAIRNOM-29-KH"
+      ],
+      "slug": "khamenei-out-as-supreme-leader-of-iran-by-february-28",
+      "active": true,
+      "closed": false
+    },
+    {
+      "eventId": "khamenei-out-as-supreme-leader-of-iran-by-march-31",
+      "ticker": "khamenei-out-as-supreme-leader-of-iran-by-march-31",
+      "title": "Khamenei out as Supreme Leader of Iran by March 31?",
+      "volume": 53078213.670704,
+      "image_url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+      "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+      "metadata": {
+        "title": "Khamenei out as Supreme Leader of Iran by March 31?",
+        "subtitle": "This market will resolve to \"Yes\" if Iran's Supreme Leader, Ali Khamenei, is removed from power for any length of time between this market's creation and March 31, 2026, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nKhamenei will be considered to be removed from power if he resigns, is detained, or otherwise loses his position or is prevented from fulfilling his duties as Supreme Leader of Iran within this market's timeframe.\n\nThe primary resolution source for this market will be a consensus of credible reporting.",
+        "imageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+        "isLive": true
+      },
+      "markets": [
+        {
+          "marketId": "0x70909f0ba8256a89c301da58812ae47203df54957a07c7f8b10235e877ad63c2",
+          "ticker": "0x70909f0ba8256a89c301da58812ae47203df54957a07c7f8b10235e877ad63c2",
+          "title": "Khamenei out as Supreme Leader of Iran by March 31?",
+          "status": "active",
+          "volume": 53079495.852704,
+          "openInterest": null,
+          "image_url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+          "pricing": {
+            "buyYesPriceUsd": 0.9985,
+            "sellYesPriceUsd": 0.9985,
+            "buyNoPriceUsd": 0.0015,
+            "sellNoPriceUsd": 0.0015,
+            "volume": 53079495.852704,
+            "volume24h": 28581165.110285,
+            "liquidityDollars": 3591709.69134,
+            "openInterest": null
+          },
+          "condition_id": "0x70909f0ba8256a89c301da58812ae47203df54957a07c7f8b10235e877ad63c2",
+          "tokens": [
+            "70771354585365381988139008309072205730081182435161568795508496003376222185889",
+            "46746822541461330721074821991383617225657173789584499857683753079229786702095"
+          ],
+          "slug": "khamenei-out-as-supreme-leader-of-iran-by-march-31",
+          "metadata": {
+            "title": "Khamenei out as Supreme Leader of Iran by March 31?",
+            "description": "This market will resolve to \"Yes\" if Iran's Supreme Leader, Ali Khamenei, is removed from power for any length of time between this market's creation and March 31, 2026, 11:59 PM ET. Otherwise, this market will resolve to \"No\".\n\nKhamenei will be considered to be removed from power if he resigns, is detained, or otherwise loses his position or is prevented from fulfilling his duties as Supreme Leader of Iran within this market's timeframe.\n\nThe primary resolution source for this market will be a consensus of credible reporting.",
+            "isTradable": true,
+            "closeTime": 1774915200000
+          }
+        }
+      ],
+      "slug": "khamenei-out-as-supreme-leader-of-iran-by-march-31",
+      "active": true,
+      "closed": false
+    }
+  ],
+  "topMarkets": [
+    {
+      "marketId": "0xd4bbf7f6707c67beb736135ad32a41f6db41f8ae52d3ac4919650de9eeb94ed8",
+      "eventId": "khamenei-out-as-supreme-leader-of-iran-by-february-28",
+      "eventTitle": "Khamenei out as Supreme Leader of Iran by February 28?",
+      "eventImageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+      "marketTitle": "Khamenei out as Supreme Leader of Iran by February 28?",
+      "image_url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+      "pricing": {
+        "buyYesPriceUsd": 0.9985,
+        "sellYesPriceUsd": 0.9985,
+        "buyNoPriceUsd": 0.0015,
+        "sellNoPriceUsd": 0.0015,
+        "volume": 93058762.408461,
+        "volume24h": 64290712.1463757,
+        "liquidityDollars": 4525896.4251,
+        "openInterest": null
+      },
+      "status": "active"
+    },
+    {
+      "marketId": "0x70909f0ba8256a89c301da58812ae47203df54957a07c7f8b10235e877ad63c2",
+      "eventId": "khamenei-out-as-supreme-leader-of-iran-by-march-31",
+      "eventTitle": "Khamenei out as Supreme Leader of Iran by March 31?",
+      "eventImageUrl": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+      "marketTitle": "Khamenei out as Supreme Leader of Iran by March 31?",
+      "image_url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/khamenei-out-as-supreme-leader-of-iran-in-2025-VNDMf5RqFLwB.jpg",
+      "pricing": {
+        "buyYesPriceUsd": 0.9985,
+        "sellYesPriceUsd": 0.9985,
+        "buyNoPriceUsd": 0.0015,
+        "sellNoPriceUsd": 0.0015,
+        "volume": 53079495.852704,
+        "volume24h": 28581165.110285,
+        "liquidityDollars": 3591709.69134,
+        "openInterest": null
+      },
+      "status": "active"
+    }
+  ],
+  "pagination": {
+    "start": 0,
+    "end": 1,
+    "total": 2,
+    "hasNext": true
+  }
 }

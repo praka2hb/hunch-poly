@@ -18,6 +18,8 @@ export interface MarketDerived {
   bestBidPct: number | null;
   bestAskPct: number | null;
   lastTradePricePct: number | null;
+  /** True only if the market is actively tradeable with valid bid/ask */
+  isLive: boolean;
 }
 
 /** Raw Gamma Market object (camelCase as returned by Gamma API) */
@@ -107,6 +109,57 @@ export interface GammaTag {
   forceHide: boolean | null;
 }
 
+// ============ DEAD MARKET FILTERING ============
+
+/** Default minimum liquidity for Gamma /events queries */
+const GAMMA_EVENTS_LIQUIDITY_MIN = 500;
+/** Default minimum volume for Gamma /events queries */
+const GAMMA_EVENTS_VOLUME_MIN = 100;
+/** Default minimum liquidity for Gamma /markets queries */
+const GAMMA_MARKETS_LIQUIDITY_MIN = 500;
+/** Default minimum volume for Gamma /markets queries */
+const GAMMA_MARKETS_VOLUME_MIN = 100;
+
+/**
+ * Check whether a single market is alive (tradeable with real liquidity).
+ * Returns false if the market should be filtered out.
+ */
+export function isMarketAlive(market: GammaMarket | TransformedMarket): boolean {
+  if (market.acceptingOrders === false) return false;
+  if (market.closed === true) return false;
+  if (market.active === false) return false;
+  if (market.bestBid == null || market.bestAsk == null) return false;
+  // Spread so wide no real market exists
+  if (market.bestAsk - market.bestBid > 0.97) return false;
+  // Effectively 0% or 100%
+  if (market.bestBid < 0.02) return false;
+  if (market.bestAsk > 0.98) return false;
+  // Too little liquidity
+  if (market.liquidityNum != null && market.liquidityNum < 100) return false;
+  // Spread field (if present) too wide
+  if ('spread' in market && market.spread != null && (market as any).spread > 0.95) return false;
+  return true;
+}
+
+/**
+ * Filter dead markets from a flat array of transformed markets.
+ */
+export function filterDeadMarkets<T extends TransformedMarket>(markets: T[]): T[] {
+  return markets.filter(isMarketAlive);
+}
+
+/**
+ * Filter dead markets inside each event, then remove events with no remaining markets.
+ */
+export function filterDeadEvents(events: TransformedEvent[]): TransformedEvent[] {
+  return events
+    .map(event => ({
+      ...event,
+      markets: filterDeadMarkets(event.markets),
+    }))
+    .filter(event => event.markets.length > 0);
+}
+
 // ============ MARKET TRANSFORM ============
 
 /**
@@ -140,6 +193,12 @@ export function transformMarket(market: GammaMarket): TransformedMarket {
     bestBidPct: market.bestBid != null ? market.bestBid * 100 : null,
     bestAskPct: market.bestAsk != null ? market.bestAsk * 100 : null,
     lastTradePricePct: market.lastTradePrice != null ? market.lastTradePrice * 100 : null,
+    isLive:
+      market.acceptingOrders === true &&
+      market.bestBid != null &&
+      market.bestAsk != null &&
+      market.bestBid >= 0.02 &&
+      market.bestBid <= 0.98,
   };
 }
 
@@ -232,8 +291,6 @@ export async function fetchGammaEvents(options?: {
   tag_slug?: string;
   order?: string;
   ascending?: boolean;
-  volume_min?: number;
-  liquidity_min?: number;
 }): Promise<TransformedEvent[]> {
   const limit = options?.limit ?? 20;
   const offset = options?.offset ?? 0;
@@ -267,11 +324,14 @@ export async function fetchGammaEvents(options?: {
     tag_slug: options?.tag_slug,
     order,
     ascending,
-    volume_min: options?.volume_min,
-    liquidity_min: options?.liquidity_min,
+    // Hardcoded minimums to cut dead markets at the query level
+    volume_min: GAMMA_EVENTS_VOLUME_MIN,
+    liquidity_min: GAMMA_EVENTS_LIQUIDITY_MIN,
   }, CacheTTL.POLY_EVENTS);
 
-  const events = (Array.isArray(rawEvents) ? rawEvents : []).map(transformEvent);
+  const events = filterDeadEvents(
+    (Array.isArray(rawEvents) ? rawEvents : []).map(transformEvent)
+  );
 
   // Cache the result
   try {
@@ -307,9 +367,14 @@ export async function fetchGammaFeaturedEvents(): Promise<TransformedEvent[]> {
     order: 'volume24hr',
     ascending: false,
     limit: 10,
+    // Hardcoded minimums to cut dead markets at the query level
+    volume_min: GAMMA_EVENTS_VOLUME_MIN,
+    liquidity_min: GAMMA_EVENTS_LIQUIDITY_MIN,
   }, CacheTTL.POLY_EVENTS_FEATURED);
 
-  const events = (Array.isArray(rawEvents) ? rawEvents : []).map(transformEvent);
+  const events = filterDeadEvents(
+    (Array.isArray(rawEvents) ? rawEvents : []).map(transformEvent)
+  );
 
   try {
     await redis.setex(cacheKey, CacheTTL.POLY_EVENTS_FEATURED, JSON.stringify(events));
@@ -343,7 +408,12 @@ export async function fetchGammaEvent(slug: string): Promise<TransformedEvent> {
     throw new Error(`Event not found: ${slug}`);
   }
 
-  const event = transformEvent(rawEvents[0]);
+  const transformed = transformEvent(rawEvents[0]);
+  // Filter dead markets from nested markets array
+  const event: TransformedEvent = {
+    ...transformed,
+    markets: filterDeadMarkets(transformed.markets),
+  };
 
   try {
     await redis.setex(cacheKey, CacheTTL.POLY_EVENTS, JSON.stringify(event));
@@ -398,9 +468,14 @@ export async function fetchGammaMarkets(options?: {
     closed,
     tag_id: options?.tag_id,
     condition_ids: options?.condition_ids,
+    // Hardcoded minimums to cut dead markets at the query level
+    liquidity_num_min: GAMMA_MARKETS_LIQUIDITY_MIN,
+    volume_min: GAMMA_MARKETS_VOLUME_MIN,
   }, CacheTTL.POLY_MARKET);
 
-  const markets = (Array.isArray(rawMarkets) ? rawMarkets : []).map(transformMarket);
+  const markets = filterDeadMarkets(
+    (Array.isArray(rawMarkets) ? rawMarkets : []).map(transformMarket)
+  );
 
   try {
     await redis.setex(cacheKey, CacheTTL.POLY_MARKET, JSON.stringify(markets));
@@ -434,9 +509,14 @@ export async function fetchGammaTopMarkets(): Promise<TransformedMarket[]> {
     active: true,
     closed: false,
     limit: 20,
+    // Hardcoded minimums to cut dead markets at the query level
+    liquidity_num_min: GAMMA_MARKETS_LIQUIDITY_MIN,
+    volume_min: GAMMA_MARKETS_VOLUME_MIN,
   }, CacheTTL.POLY_MARKETS_TOP);
 
-  const markets = (Array.isArray(rawMarkets) ? rawMarkets : []).map(transformMarket);
+  const markets = filterDeadMarkets(
+    (Array.isArray(rawMarkets) ? rawMarkets : []).map(transformMarket)
+  );
 
   try {
     await redis.setex(cacheKey, CacheTTL.POLY_MARKETS_TOP, JSON.stringify(markets));
@@ -580,7 +660,12 @@ export async function searchGammaMarkets(
     limit: options?.limit ?? 20,
     active: options?.active ?? true,
     slug: query,
+    // Hardcoded minimums to cut dead markets at the query level
+    liquidity_num_min: GAMMA_MARKETS_LIQUIDITY_MIN,
+    volume_min: GAMMA_MARKETS_VOLUME_MIN,
   }, CacheTTL.POLY_MARKET);
 
-  return (Array.isArray(rawMarkets) ? rawMarkets : []).map(transformMarket);
+  return filterDeadMarkets(
+    (Array.isArray(rawMarkets) ? rawMarkets : []).map(transformMarket)
+  );
 }
