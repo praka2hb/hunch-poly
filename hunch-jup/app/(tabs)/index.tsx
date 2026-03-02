@@ -6,6 +6,7 @@ import MarketPopout from "@/components/MarketPopout";
 import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import { MiniNewsCarousel } from "@/components/MiniNewsCarousel";
 import NotificationSidebar from "@/components/NotificationSidebar";
+import DepositSheet from "@/components/DepositSheet";
 import { HomeFeedSkeleton, ListFooterSkeleton } from "@/components/skeletons";
 import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
@@ -78,6 +79,7 @@ export default function HomeScreen() {
   const [popoutVisible, setPopoutVisible] = useState(false);
   const [popoutMarket, setPopoutMarket] = useState<Market | null>(null);
   const [popoutEventTitle, setPopoutEventTitle] = useState<string | undefined>(undefined);
+  const [depositSheetVisible, setDepositSheetVisible] = useState(false);
 
   const isLoadingRef = useRef(false);
   const cursorRef = useRef<string | undefined>(undefined);
@@ -362,7 +364,7 @@ export default function HomeScreen() {
 
     // Trending Markets section
     if (liveMarkets.length > 0) {
-      items.push({ type: 'sectionHeader', data: { title: 'Trending Markets', subtitle: `${liveMarkets.length} active` } });
+      items.push({ type: 'sectionHeader', data: { title: 'Trending Markets' } });
       liveMarkets.forEach((market) => items.push({ type: 'market', data: market }));
     }
 
@@ -467,9 +469,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               className="flex-row items-center gap-1.5 px-3.5 py-2 rounded-md bg-slate-200"
               onPress={() => {
-                if (backendUser?.walletAddress) {
-                  fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
-                }
+                setDepositSheetVisible(true);
               }}
               activeOpacity={0.7}
             >
@@ -592,6 +592,16 @@ export default function HomeScreen() {
         onGoToEvent={(market) => {
           if (market.eventTicker) {
             router.push({ pathname: '/event/[ticker]', params: { ticker: market.eventTicker } });
+          }
+        }}
+      />
+      <DepositSheet
+        visible={depositSheetVisible}
+        onClose={() => setDepositSheetVisible(false)}
+        walletAddress={backendUser?.walletAddress}
+        onDebitCard={() => {
+          if (backendUser?.walletAddress) {
+            fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: '10' });
           }
         }}
       />

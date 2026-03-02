@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser, AuthError, createAuthErrorResponse } from '@/app/lib/authMiddleware';
 
 /**
+ * @deprecated Use POST /api/onboarding/set-approvals instead.
+ * The new flow handles all 7 approvals via Safe relay on the client,
+ * then confirms via the set-approvals endpoint.
+ *
  * GET /api/polymarket/approval
  * 
  * Check if the user's Privy embedded wallet has approved USDC spending

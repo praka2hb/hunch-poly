@@ -1,6 +1,35 @@
 import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse, UserPositionsResponse } from './types';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://84d2-2401-4900-abab-5045-a5ee-d81-72a2-e646.ngrok-free.app';
+// ─── Bridge (Cross-Chain) Types ──────────────────────────────────────────────
+export interface BridgeSupportedAsset {
+    chainId: string;
+    chainName: string;
+    token: {
+        name: string;
+        symbol: string;
+        address: string;
+        decimals: number;
+    };
+    minCheckoutUsd: number;
+}
+
+export interface BridgeSupportedAssetsResponse {
+    supportedAssets: BridgeSupportedAsset[];
+}
+
+export interface BridgeDepositResponse {
+    address: {
+        evm: string;
+        svm: string;
+        tron: string;
+        btc: string;
+        [key: string]: string;
+    };
+    note: string;
+}
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://7dfd-2409-40c0-3003-716f-148e-373d-ad95-caac.ngrok-free.app';
+export { API_BASE_URL };
 const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
 
 // Auth token getter - must be set by the app before making authenticated calls
@@ -477,6 +506,121 @@ export const api = {
             throw new Error((error as any)?.error || 'Failed to delete post');
         }
     },
+
+    // ─── Polymarket Wallet Onboarding ────────────────────────────────────
+
+    /** GET /api/onboarding/status — current onboarding state */
+    getPolymarketOnboardingStatus: async (): Promise<{
+        step: number;
+        safeAddress: string | null;
+        safeDeployed: boolean;
+        approvalsSet: boolean;
+        credentialsReady: boolean;
+    }> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/onboarding/status`);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to get onboarding status');
+        }
+        return response.json();
+    },
+
+    /** POST /api/onboarding/derive-safe — step 1: derive Safe address */
+    deriveSafe: async (): Promise<{ safeAddress: string; alreadyDerived?: boolean }> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/onboarding/derive-safe`, {
+            method: 'POST',
+            body: JSON.stringify({}),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to derive Safe address');
+        }
+        return response.json();
+    },
+
+    /** POST /api/onboarding/deploy-safe — step 2: confirm Safe deployment */
+    confirmSafeDeployed: async (transactionHash?: string): Promise<{ success: boolean; safeAddress: string }> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/onboarding/deploy-safe`, {
+            method: 'POST',
+            body: JSON.stringify({ success: true, transactionHash }),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to confirm Safe deployment');
+        }
+        return response.json();
+    },
+
+    /** POST /api/onboarding/set-approvals — step 3: confirm token approvals */
+    confirmApprovalsSet: async (transactionHash?: string): Promise<{ success: boolean }> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/onboarding/set-approvals`, {
+            method: 'POST',
+            body: JSON.stringify({ success: true, transactionHash }),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to confirm approvals');
+        }
+        return response.json();
+    },
+
+    /** POST /api/onboarding/save-credentials — step 4: save CLOB API credentials */
+    savePolymarketCredentials: async (creds: { key: string; secret: string; passphrase: string }): Promise<{ success: boolean }> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/onboarding/save-credentials`, {
+            method: 'POST',
+            body: JSON.stringify(creds),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to save credentials');
+        }
+        return response.json();
+    },
+
+    /** POST /api/polymarket/sign — get builder HMAC signature (no user auth) */
+    getBuilderSignature: async (params: { method: string; path: string; body?: string }): Promise<{
+        POLY_BUILDER_SIGNATURE: string;
+        POLY_BUILDER_TIMESTAMP: string;
+        POLY_BUILDER_API_KEY: string;
+        POLY_BUILDER_PASSPHRASE: string;
+    }> => {
+        const response = await fetch(`${API_BASE_URL}/api/polymarket/sign`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to get builder signature');
+        }
+        return response.json();
+    },
+
+    // ─── Bridge (Cross-Chain Funding) ────────────────────────────────────
+
+    /** GET /supported-assets — list chains & tokens accepted for bridging */
+    getBridgeSupportedAssets: async (): Promise<BridgeSupportedAssetsResponse> => {
+        const response = await fetch(`${API_BASE_URL}/api/polymarket/bridge-proxy/supported-assets`);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to fetch supported assets');
+        }
+        return response.json();
+    },
+
+    /** POST /deposit — create deposit addresses for cross-chain funding */
+    createBridgeDepositAddresses: async (walletAddress: string): Promise<BridgeDepositResponse> => {
+        const response = await fetch(`${API_BASE_URL}/api/polymarket/bridge-proxy/deposit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: walletAddress }),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to create deposit addresses');
+        }
+        return response.json();
+    },
 };
 
 const toNumberSafe = (value: unknown): number | null => {
@@ -630,6 +774,7 @@ const mapJupiterMarketToMarket = (market: any, eventId?: string): Market => {
             market?.color_code ||
             undefined,
         isLive: market?.isLive ?? (market?.metadata?.isTradable === true && sellYes !== null),
+        outcomeLabel: market?.outcomeLabel || undefined,
     };
 };
 
@@ -909,7 +1054,11 @@ export const marketsApi = {
                     : [];
             const pagination = payload?.pagination || payload?.data?.pagination;
             const hasMore = Boolean(pagination?.hasNext);
-            const nextCursor = hasMore ? String(start + pageSize) : undefined;
+            // Use nextStart from backend (raw Gamma offset) if available,
+            // otherwise fall back to the simple start + pageSize increment.
+            const nextCursor = hasMore
+                ? String(pagination?.nextStart ?? (start + pageSize))
+                : undefined;
 
             const events = eventData.map(mapJupiterEventToEvent);
             const topMarkets = topMarketsData.map((market: any) =>

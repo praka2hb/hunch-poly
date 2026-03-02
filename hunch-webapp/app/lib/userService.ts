@@ -27,6 +27,10 @@ export interface UserProfile {
   walletReady: boolean;
   hasLinkedX: boolean;
   authProvider: string | null;
+  safeAddress: string | null;
+  safeDeployed: boolean;
+  approvalsSet: boolean;
+  polymarketOnboardingStep: number;
   _count?: {
     trades: number;
   };
@@ -75,6 +79,10 @@ export async function syncUser(data: CreateUserData): Promise<UserProfile> {
         walletReady: true,
         hasLinkedX: true,
         authProvider: true,
+        safeAddress: true,
+        safeDeployed: true,
+        approvalsSet: true,
+        polymarketOnboardingStep: true,
         _count: {
           select: {
             trades: true,
@@ -137,6 +145,10 @@ export async function syncUser(data: CreateUserData): Promise<UserProfile> {
       walletReady: true,
       hasLinkedX: true,
       authProvider: true,
+      safeAddress: true,
+      safeDeployed: true,
+      approvalsSet: true,
+      polymarketOnboardingStep: true,
       _count: {
         select: {
           trades: true,
@@ -199,6 +211,10 @@ export async function getUserById(userId: string, skipCache: boolean = false): P
       walletReady: true,
       hasLinkedX: true,
       authProvider: true,
+      safeAddress: true,
+      safeDeployed: true,
+      approvalsSet: true,
+      polymarketOnboardingStep: true,
       _count: {
         select: {
           trades: true,
@@ -305,6 +321,10 @@ export async function getUserByPrivyId(privyId: string): Promise<UserProfile | n
       walletReady: true,
       hasLinkedX: true,
       authProvider: true,
+      safeAddress: true,
+      safeDeployed: true,
+      approvalsSet: true,
+      polymarketOnboardingStep: true,
       _count: {
         select: {
           trades: true,
@@ -362,6 +382,10 @@ export async function getUserByWalletAddress(walletAddress: string): Promise<Use
       walletReady: true,
       hasLinkedX: true,
       authProvider: true,
+      safeAddress: true,
+      safeDeployed: true,
+      approvalsSet: true,
+      polymarketOnboardingStep: true,
       _count: {
         select: {
           trades: true,
@@ -424,6 +448,10 @@ export async function getUserByDisplayName(displayName: string): Promise<UserPro
       walletReady: true,
       hasLinkedX: true,
       authProvider: true,
+      safeAddress: true,
+      safeDeployed: true,
+      approvalsSet: true,
+      polymarketOnboardingStep: true,
       _count: {
         select: {
           trades: true,
@@ -488,6 +516,10 @@ export async function searchUsers(query: string, limit: number = 10): Promise<Us
       walletReady: true,
       hasLinkedX: true,
       authProvider: true,
+      safeAddress: true,
+      safeDeployed: true,
+      approvalsSet: true,
+      polymarketOnboardingStep: true,
       _count: {
         select: {
           trades: true,
@@ -525,6 +557,10 @@ export async function getTopTraders(limit: number = 10, excludeUserId?: string):
       walletReady: true,
       hasLinkedX: true,
       authProvider: true,
+      safeAddress: true,
+      safeDeployed: true,
+      approvalsSet: true,
+      polymarketOnboardingStep: true,
       _count: {
         select: {
           trades: true,

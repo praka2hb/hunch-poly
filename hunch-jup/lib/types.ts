@@ -17,6 +17,11 @@ export interface User {
     _count?: {
         trades: number;
     };
+    // Polymarket Safe / wallet onboarding
+    safeAddress?: string | null;
+    safeDeployed?: boolean;
+    approvalsSet?: boolean;
+    polymarketOnboardingStep?: number; // 0-4
 }
 
 export type OnboardingStep =
@@ -237,6 +242,8 @@ export interface Market {
     image_url?: string;
     /** True if the market is actively tradeable with valid bid/ask */
     isLive?: boolean;
+    /** Short extracted outcome label (e.g. "Spain", "Gavin Newsom") */
+    outcomeLabel?: string;
 }
 
 export interface SettlementSource {

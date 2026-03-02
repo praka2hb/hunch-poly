@@ -111,7 +111,7 @@ export const getTopMarkets = (
  * @returns Display title
  */
 export const getMarketDisplayTitle = (market: Market): string => {
-    return market.yesSubTitle || market.title || 'Untitled Market';
+    return market.outcomeLabel || market.yesSubTitle || market.title || 'Untitled Market';
 };
 
 /** Patterns that indicate a numeric-outcome market (e.g. "Bitcoin hitting $X", "How many launches") */

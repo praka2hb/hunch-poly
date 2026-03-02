@@ -45,10 +45,17 @@ model User {
   authProvider           String? // "apple" | "twitter" | etc.
   hasLinkedX             Boolean        @default(false)
 
-  // Per-user Polymarket CLOB API credentials (derived from wallet)
+  // Per-user Polymarket CLOB API credentials (derived from wallet, encrypted at rest)
   clobApiKey        String? // Polymarket CLOB API key
   clobApiSecret     String? // Polymarket CLOB API secret
   clobApiPassphrase String? // Polymarket CLOB API passphrase
+
+  // Polymarket Safe / onboarding
+  safeAddress                    String?   // Derived Gnosis Safe address (0x...)
+  safeDeployed                   Boolean   @default(false)
+  approvalsSet                   Boolean   @default(false)
+  polymarketOnboardingStep       Int       @default(0) // 0=not started, 1=safe derived, 2=deployed, 3=approvals set, 4=complete
+  polymarketCredentialsCreatedAt DateTime?
 
   // Push notifications
   expoPushToken             String?
@@ -60,6 +67,7 @@ model User {
   @@index([walletAddress])
   @@index([onboardingStep])
   @@index([hasCompletedOnboarding])
+  @@index([polymarketOnboardingStep])
 }
 
 model Trade {

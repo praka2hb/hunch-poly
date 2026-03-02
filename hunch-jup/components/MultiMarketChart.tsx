@@ -538,7 +538,7 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
             <View style={styles.legendTwoCols}>
                 <View style={styles.legendColumnLeft}>
                     {currentPrices.slice(0, 2).map(({ market, color }) => {
-                        const displayName = market.yesSubTitle || market.title;
+                        const displayName = market.outcomeLabel || market.yesSubTitle || market.title;
                         const short = displayName.length > 14 ? displayName.substring(0, 14) + '…' : displayName;
                         return (
                             <View key={market.ticker} style={styles.legendItem}>
@@ -550,7 +550,7 @@ export const MultiMarketChart: React.FC<MultiMarketChartProps> = ({
                 </View>
                 <View style={styles.legendColumnRight}>
                     {currentPrices.slice(2, 4).map(({ market, color }) => {
-                        const displayName = market.yesSubTitle || market.title;
+                        const displayName = market.outcomeLabel || market.yesSubTitle || market.title;
                         const short = displayName.length > 14 ? displayName.substring(0, 14) + '…' : displayName;
                         return (
                             <View key={market.ticker} style={styles.legendItem}>

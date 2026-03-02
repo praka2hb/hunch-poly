@@ -5,6 +5,7 @@ import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from "expo-linear-gradient";
 import { useRef, useState } from "react";
 import { Animated, Dimensions, Image, ImageBackground, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import DepositSheet from "./DepositSheet";
 import WithdrawSheet from "./WithdrawSheet";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -34,6 +35,7 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress, wa
     const [copied, setCopied] = useState(false);
     const [withdrawOpen, setWithdrawOpen] = useState(false);
     const [withdrawSubmitting, setWithdrawSubmitting] = useState(false);
+    const [depositOpen, setDepositOpen] = useState(false);
     const flipAnimation = useRef(new Animated.Value(0)).current;
     const { fundWallet } = useFundWallet();
 
@@ -202,12 +204,7 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress, wa
                                             onPress={(e) => {
                                                 e.stopPropagation();
                                                 if (!isFlipped) return;
-                                                if (!walletAddress) return;
-                                                fundWallet({
-                                                    asset: 'USDC',
-                                                    address: walletAddress,
-                                                    amount: "10", // SOL
-                                                });
+                                                setDepositOpen(true);
                                             }}
                                         >
                                             <Ionicons name="arrow-down" size={18} color="#FFF" />
@@ -235,6 +232,17 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress, wa
                     </Animated.View>
                 </View>
             </TouchableOpacity>
+
+            <DepositSheet
+                visible={depositOpen}
+                onClose={() => setDepositOpen(false)}
+                walletAddress={walletAddress}
+                onDebitCard={() => {
+                    if (walletAddress) {
+                        fundWallet({ asset: 'USDC', address: walletAddress, amount: '10' });
+                    }
+                }}
+            />
 
             <WithdrawSheet
                 visible={withdrawOpen}

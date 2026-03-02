@@ -6,6 +6,10 @@ import { prisma } from '@/app/lib/db';
 const CLOB_BASE_URL = process.env.POLYMARKET_CLOB_URL || 'https://clob.polymarket.com';
 
 /**
+ * @deprecated Use POST /api/onboarding/save-credentials instead.
+ * The new flow derives credentials client-side via ClobClient.deriveApiKey()
+ * and sends them to the save-credentials endpoint.
+ *
  * POST /api/polymarket/derive-key
  * 
  * Derive Polymarket CLOB API credentials for the authenticated user's wallet.

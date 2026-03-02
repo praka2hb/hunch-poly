@@ -96,7 +96,7 @@ export default function MarketPopout({
         typeof url === 'string' && url.toLowerCase().includes('kalshi-fallback-images');
     const isFallbackImage = isBadImageUrl((market as any).image_url);
     const question = eventTitle || market.title;
-    const answer = market.yesSubTitle || market.title;
+    const answer = market.outcomeLabel || market.yesSubTitle || market.title;
     const yesBid = market.yesBid ? parseFloat(market.yesBid) * 100 : null;
     const oddsColor = yesBid === null ? Theme.textPrimary : yesBid >= 50 ? '#32de12' : Theme.chartNegative;
 

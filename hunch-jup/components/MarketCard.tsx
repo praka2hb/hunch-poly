@@ -21,7 +21,7 @@ export function MarketCard({ item, onPress, onLongPress, eventTitle }: MarketCar
   const isFallbackImage = isBadImageUrl((item as any).image_url);
 
   const question = eventTitle || item.title;
-  const answer = item.yesSubTitle || item.title;
+  const answer = item.outcomeLabel || item.yesSubTitle || item.title;
   const yesBid = item.yesBid ? parseFloat(item.yesBid) * 100 : null;
 
   // Guard: don't render dead markets
@@ -86,16 +86,24 @@ export function MarketCard({ item, onPress, onLongPress, eventTitle }: MarketCar
           )}
         </View>
 
-        {/* Center - Question + Volume */}
+        {/* Center - Question + Outcome label + Volume */}
         <View className="flex-1 min-w-0 justify-center py-0.5">
           <Text
-            className="text-[15px] font-medium text-txt-primary leading-5"
+            className="text-[14px] font-medium text-txt-secondary leading-5"
             numberOfLines={2}
           >
             {question}
           </Text>
+          {answer && answer !== question ? (
+            <Text
+              className="text-[16px] font-bold text-txt-primary mt-0.5 leading-snug"
+              numberOfLines={1}
+            >
+              {answer}
+            </Text>
+          ) : null}
           {item.volume ? (
-            <View className="flex-row items-center mt-2 gap-1">
+            <View className="flex-row items-center mt-1.5 gap-1">
               <Ionicons name="trending-up-outline" size={12} color={Theme.textDisabled} />
               <Text className="text-[12px] text-txt-disabled">
                 {formatVolume(item.volume)} vol

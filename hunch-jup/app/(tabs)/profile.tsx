@@ -1,4 +1,5 @@
 import CreditCard from "@/components/CreditCard";
+import DepositSheet from "@/components/DepositSheet";
 import { MarketTradeSheet } from "@/components/MarketTradeSheet";
 import PositionActionSheet from "@/components/PositionActionSheet";
 import PositionCard from "@/components/PositionCard";
@@ -81,6 +82,7 @@ export default function ProfileScreen() {
 
     // Wallet provider state
     const [walletProvider, setWalletProvider] = useState<any>(null);
+    const [depositSheetVisible, setDepositSheetVisible] = useState(false);
 
     // Get wallet provider
     useEffect(() => {
@@ -557,9 +559,7 @@ export default function ProfileScreen() {
                                     <TouchableOpacity
                                         className="flex-row ml-20 items-center gap-1.5 px-3.5 py-[7px]  rounded-md  bg-slate-200 "
                                         onPress={() => {
-                                            if (backendUser?.walletAddress) {
-                                                fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: "10" });
-                                            }
+                                            setDepositSheetVisible(true);
                                         }}
                                     >
                                         <Text className="text-[15px] font-medium   text-txt-primary">+ Add Cash</Text>
@@ -926,6 +926,17 @@ export default function ProfileScreen() {
                 backendUser={backendUser || null}
                 walletProvider={walletProvider}
                 eventTitle={selectedMarketEventTitle}
+            />
+
+            <DepositSheet
+                visible={depositSheetVisible}
+                onClose={() => setDepositSheetVisible(false)}
+                walletAddress={backendUser?.walletAddress}
+                onDebitCard={() => {
+                    if (backendUser?.walletAddress) {
+                        fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: '10' });
+                    }
+                }}
             />
         </View >
     );

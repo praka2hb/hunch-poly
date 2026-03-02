@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Dimensions, Image, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -198,6 +199,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
     eventTitle: propEventTitle,
 }) => {
     const insets = useSafeAreaInsets();
+    const tradeRouter = useRouter();
     const sheetHeight = Math.round(Dimensions.get("window").height * 0.92);
     const slideAnim = useRef(new Animated.Value(sheetHeight)).current;
     const scrollOffsetRef = useRef(0);
@@ -427,6 +429,12 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
     const handleTrade = async () => {
         if (!market || !backendUser) {
             setTradeError("Sign in to trade");
+            return;
+        }
+        // Gate: require Polymarket onboarding before trading
+        if (!backendUser.polymarketOnboardingStep || backendUser.polymarketOnboardingStep < 4) {
+            onClose();
+            tradeRouter.push("/onboarding/wallet-setup");
             return;
         }
         if (!walletProvider) {

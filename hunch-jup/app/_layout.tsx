@@ -76,7 +76,7 @@ function AuthFlowGate() {
   const router = useRouter();
   const segments = useSegments();
   const { isReady, user } = usePrivy();
-  const { backendUser, isLoading: isBackendUserLoading, isDevMode } = useUser();
+  const { backendUser, isLoading: isBackendUserLoading, isDevMode, setBackendUser } = useUser();
 
   useEffect(() => {
     if (!isReady || isBackendUserLoading) return;
@@ -100,6 +100,10 @@ function AuthFlowGate() {
     // RULE 1: Not authenticated → must be on login (unless still loading)
     // ─────────────────────────────────────────────────────────────────────────
     if (!user) {
+      // Clear any stale cached backend user so the login drawer can open
+      if (backendUser) {
+        setBackendUser(null);
+      }
       if (!inLogin) {
         router.replace('/login');
       }
@@ -232,6 +236,14 @@ export default function RootLayout() {
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="onboarding/link-x" options={{ headerShown: false }} />
                 <Stack.Screen name="onboarding/username" options={{ headerShown: false }} />
+                <Stack.Screen
+                  name="onboarding/wallet-setup"
+                  options={{
+                    headerShown: false,
+                    presentation: 'fullScreenModal',
+                    gestureEnabled: false,
+                  }}
+                />
                 <Stack.Screen name="preferences" options={{ headerShown: false }} />
                 <Stack.Screen name="suggested-followers" options={{ headerShown: false }} />
                 <Stack.Screen
