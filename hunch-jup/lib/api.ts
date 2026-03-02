@@ -28,7 +28,7 @@ export interface BridgeDepositResponse {
     note: string;
 }
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://7dfd-2409-40c0-3003-716f-148e-373d-ad95-caac.ngrok-free.app';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunch-poly.vercel.app';
 export { API_BASE_URL };
 const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
 

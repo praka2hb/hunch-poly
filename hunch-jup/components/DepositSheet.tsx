@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop, Text as SvgText } from "react-native-svg";
 import {
     ActivityIndicator,
     Animated,
@@ -26,13 +27,88 @@ const SURFACE_BORDER = "rgba(0,0,0,0.14)";
 const TEXT_PRIMARY = "#11181C";
 const TEXT_DIM = "rgba(0,0,0,0.62)";
 const TEXT_MUTED = "rgba(0,0,0,0.45)";
+// ── Chain logo SVG components ──
+function EthLogo({ size = 20 }: { size?: number }) {
+    return (
+        <Svg width={size} height={size} viewBox="0 0 32 32">
+            {/* upper-left face */}
+            <Path d="M16 2L0 17L16 12Z" fill="#8197EE"/>
+            {/* upper-right face */}
+            <Path d="M16 2L16 12L32 17Z" fill="#627EEA"/>
+            {/* mid-left face */}
+            <Path d="M0 17L16 22L16 12Z" fill="#627EEA" fillOpacity={0.5}/>
+            {/* mid-right face */}
+            <Path d="M32 17L16 12L16 22Z" fill="#627EEA"/>
+            {/* lower-left face */}
+            <Path d="M0 17L16 30L16 22Z" fill="#8197EE" fillOpacity={0.8}/>
+            {/* lower-right face */}
+            <Path d="M16 22L16 30L32 17Z" fill="#627EEA"/>
+        </Svg>
+    );
+}
+
+function SolLogo({ size = 20 }: { size?: number }) {
+    return (
+        <Svg width={size} height={size} viewBox="0 0 32 32">
+            <Defs>
+                <LinearGradient id="solG" x1="0" y1="0" x2="1" y2="0">
+                    <Stop offset="0%" stopColor="#9945FF"/>
+                    <Stop offset="100%" stopColor="#14F195"/>
+                </LinearGradient>
+            </Defs>
+            {/* top bar — leans upper-right */}
+            <Path d="M5,3 L30,3 L25,9 L0,9 Z" fill="url(#solG)"/>
+            {/* mid bar */}
+            <Path d="M5,13 L30,13 L25,19 L0,19 Z" fill="url(#solG)"/>
+            {/* bottom bar — reversed taper */}
+            <Path d="M0,23 L25,23 L30,29 L5,29 Z" fill="url(#solG)"/>
+        </Svg>
+    );
+}
+
+function BtcLogo({ size = 20 }: { size?: number }) {
+    return (
+        <Svg width={size} height={size} viewBox="0 0 32 32">
+            <Circle cx="16" cy="16" r="16" fill="#F7931A"/>
+            <SvgText
+                x="16"
+                y="22"
+                textAnchor="middle"
+                fontSize="18"
+                fontWeight="bold"
+                fill="white"
+            >{"₿"}</SvgText>
+        </Svg>
+    );
+}
+
+function TronLogo({ size = 20 }: { size?: number }) {
+    return (
+        <Svg width={size} height={size} viewBox="0 0 32 32">
+            <Circle cx="16" cy="16" r="16" fill="#CC0000"/>
+            {/* horizontal bar */}
+            <Rect x="7" y="10.5" width="18" height="3.5" rx="1.5" fill="white"/>
+            {/* vertical stem */}
+            <Rect x="14.5" y="10.5" width="3" height="12" rx="1" fill="white"/>
+        </Svg>
+    );
+}
+
+function ChainLogo({ chainKey, size }: { chainKey: ChainKey; size: number }) {
+    if (chainKey === "evm") return <EthLogo size={size}/>;
+    if (chainKey === "svm") return <SolLogo size={size}/>;
+    if (chainKey === "btc") return <BtcLogo size={size}/>;
+    if (chainKey === "tron") return <TronLogo size={size}/>;
+    return null;
+}
+
 // Chain display config
 type ChainKey = "evm" | "svm" | "tron" | "btc";
-const CHAINS: { key: ChainKey; icon: keyof typeof Ionicons.glyphMap; label: string; shortLabel: string; color: string }[] = [
-    { key: "evm", icon: "cube-outline", label: "EVM", shortLabel: "EVM", color: "#627EEA" },
-    { key: "svm", icon: "flash-outline", label: "Solana", shortLabel: "SOL", color: "#9945FF" },
-    { key: "tron", icon: "globe-outline", label: "Tron", shortLabel: "TRX", color: "#FF0013" },
-    { key: "btc", icon: "logo-bitcoin", label: "Bitcoin", shortLabel: "BTC", color: "#F7931A" },
+const CHAINS: { key: ChainKey; label: string; shortLabel: string; color: string }[] = [
+    { key: "evm", label: "EVM", shortLabel: "EVM", color: "#627EEA" },
+    { key: "svm", label: "Solana", shortLabel: "SOL", color: "#9945FF" },
+    { key: "tron", label: "Tron", shortLabel: "TRX", color: "#CC0000" },
+    { key: "btc", label: "Bitcoin", shortLabel: "BTC", color: "#F7931A" },
 ];
 
 type SheetView = "choose" | "crosschain";
@@ -301,7 +377,9 @@ export default function DepositSheet({
                                                 setCopiedKey(null);
                                             }}
                                         >
-                                            <Ionicons name={c.icon} size={16} color={active ? "#fff" : TEXT_DIM} />
+                                            <View style={{ opacity: active ? 1 : 0.5 }}>
+                                                <ChainLogo chainKey={c.key} size={16}/>
+                                            </View>
                                             <Text style={[styles.chainTabLabel, active && styles.chainTabLabelActive]}>
                                                 {c.shortLabel}
                                             </Text>
@@ -325,11 +403,10 @@ export default function DepositSheet({
                                             isPiecesGlued
                                         />
                                     </View>
-                                    <Text style={styles.chainNameLabel}>
-                                        <Ionicons name={chainMeta.icon} size={14} color={chainMeta.color} />
-                                        {"  "}
-                                        {chainMeta.label}
-                                    </Text>
+                                    <View style={styles.chainNameRow}>
+                                        <ChainLogo chainKey={selectedChain} size={16}/>
+                                        <Text style={styles.chainNameLabel}>{chainMeta.label}</Text>
+                                    </View>
                                 </View>
                             ) : null}
 
@@ -589,8 +666,13 @@ const styles = StyleSheet.create({
     qrCode: {
         backgroundColor: "#fff",
     },
-    chainNameLabel: {
+    chainNameRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
         marginTop: 12,
+    },
+    chainNameLabel: {
         fontSize: 14,
         fontWeight: "600",
         color: TEXT_DIM,
