@@ -363,6 +363,7 @@ export async function fetchGammaMarkets(options?: {
   offset?: number;
   order?: string;
   ascending?: boolean;
+  active?: boolean;
   tag_id?: number;
   closed?: boolean;
   condition_ids?: string;
@@ -371,10 +372,11 @@ export async function fetchGammaMarkets(options?: {
   const offset = options?.offset ?? 0;
   const order = options?.order ?? 'volume24hr';
   const ascending = options?.ascending ?? false;
+  const active = options?.active ?? true;
   const closed = options?.closed ?? false;
 
   const cacheKey = CacheKeys.polyMarkets(
-    `${limit}:${offset}:${order}:${ascending}:${closed}:${options?.tag_id ?? ''}:${options?.condition_ids ?? ''}`
+    `${limit}:${offset}:${order}:${ascending}:${active}:${closed}:${options?.tag_id ?? ''}:${options?.condition_ids ?? ''}`
   );
 
   try {
@@ -392,6 +394,7 @@ export async function fetchGammaMarkets(options?: {
     offset,
     order,
     ascending,
+    active,
     closed,
     tag_id: options?.tag_id,
     condition_ids: options?.condition_ids,
