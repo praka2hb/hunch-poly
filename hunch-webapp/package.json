@@ -19,6 +19,7 @@
     "@google/genai": "^1.37.0",
     "@google/generative-ai": "^0.21.0",
     "@langchain/openai": "^1.2.1",
+    "@polymarket/builder-relayer-client": "^0.0.8",
     "@polymarket/builder-signing-sdk": "^0.0.8",
     "@prisma/adapter-pg": "^7.1.0",
     "@prisma/client": "^7.1.0",

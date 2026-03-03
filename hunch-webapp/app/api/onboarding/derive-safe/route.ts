@@ -1,21 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser, AuthError, createAuthErrorResponse } from '@/app/lib/authMiddleware';
 import { prisma } from '@/app/lib/db';
-import { ethers } from 'ethers';
+import { deriveSafe as sdkDeriveSafe } from '@polymarket/builder-relayer-client/dist/builder/derive';
+import { getContractConfig } from '@polymarket/builder-relayer-client/dist/config';
 
-// Polymarket Safe factory constants (Polygon mainnet)
-const SAFE_FACTORY = '0xaacFeEa03eb1561C4e67d661e40682Bd20E3541b';
-const SAFE_INIT_CODE_HASH = '0x2bce2127ff07fb632d16c8347c4ebf501f4841168bed00d9e6ef715ddb6fcecf';
+const POLYGON_CHAIN_ID = 137;
 
 /**
- * Deterministically derive a Polymarket Safe address from an EOA
- * using CREATE2 (same formula the RelayClient uses internally).
+ * Derive Safe address using the official Polymarket SDK.
+ * This ensures the derived address matches what the RelayClient expects.
  */
 function deriveSafe(eoaAddress: string): string {
-    const salt = ethers.keccak256(
-        ethers.AbiCoder.defaultAbiCoder().encode(['address'], [eoaAddress])
-    );
-    return ethers.getCreate2Address(SAFE_FACTORY, salt, SAFE_INIT_CODE_HASH);
+    const config = getContractConfig(POLYGON_CHAIN_ID);
+    return sdkDeriveSafe(eoaAddress, config.SafeContracts.SafeFactory);
 }
 
 /**

@@ -43,12 +43,11 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'path is required' }, { status: 400 });
         }
 
-        const timestamp = Math.floor(Date.now() / 1000);
+        const sigTimestamp = Date.now().toString();
 
-        // Build the HMAC signature using the Polymarket builder signing SDK
         const signature = buildHmacSignature(
             builderSecret,
-            timestamp,
+            parseInt(sigTimestamp),
             method.toUpperCase(),
             path,
             requestBody || ''
@@ -56,7 +55,7 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             POLY_BUILDER_SIGNATURE: signature,
-            POLY_BUILDER_TIMESTAMP: String(timestamp),
+            POLY_BUILDER_TIMESTAMP: sigTimestamp,
             POLY_BUILDER_API_KEY: builderApiKey,
             POLY_BUILDER_PASSPHRASE: builderPassphrase,
         });
