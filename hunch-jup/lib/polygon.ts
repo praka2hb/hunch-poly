@@ -6,8 +6,11 @@
 export const POLYGON_CHAIN_ID = 137;
 export const POLYGON_CHAIN_ID_HEX = '0x89';
 
-/** Native USDC on Polygon (NOT bridged USDC.e) — 6 decimals */
+/** Native USDC on Polygon — 6 decimals */
 export const POLYGON_USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+
+/** Bridged USDC.e on Polygon (PoS bridged) — 6 decimals */
+export const POLYGON_USDC_E_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
 
 /**
  * Public Polygon RPC endpoints in priority order.
@@ -84,19 +87,33 @@ export async function fetchPolygonUsdcBalance(
     rpcUrl?: string,
 ): Promise<number> {
     const callData = ERC20_BALANCE_OF_SELECTOR + encodeAddress(walletAddress);
-    const body = JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'eth_call',
-        params: [
-            { to: POLYGON_USDC_ADDRESS, data: callData },
-            'latest',
-        ],
-    });
-    const json = await jsonRpcCall(body, rpcUrl);
-    // Result is a hex-encoded uint256; USDC has 6 decimals
-    const rawHex: string = json.result || '0x0';
-    return Number(BigInt(rawHex)) / 1e6;
+
+    // Query native USDC and bridged USDC.e in parallel
+    const [nativeJson, bridgedJson] = await Promise.all([
+        jsonRpcCall(
+            JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                method: 'eth_call',
+                params: [{ to: POLYGON_USDC_ADDRESS, data: callData }, 'latest'],
+            }),
+            rpcUrl,
+        ),
+        jsonRpcCall(
+            JSON.stringify({
+                jsonrpc: '2.0',
+                id: 2,
+                method: 'eth_call',
+                params: [{ to: POLYGON_USDC_E_ADDRESS, data: callData }, 'latest'],
+            }),
+            rpcUrl,
+        ),
+    ]);
+
+    // Both USDC and USDC.e have 6 decimals
+    const nativeBalance = Number(BigInt(nativeJson.result || '0x0')) / 1e6;
+    const bridgedBalance = Number(BigInt(bridgedJson.result || '0x0')) / 1e6;
+    return nativeBalance + bridgedBalance;
 }
 
 // ─── Fetch native POL (MATIC) balance ───────────────────────────────

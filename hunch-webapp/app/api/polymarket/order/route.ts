@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser, AuthError, createAuthErrorResponse } from '@/app/lib/authMiddleware';
 import { prisma } from '@/app/lib/db';
+import { decrypt } from '@/app/lib/encryption';
 import crypto from 'crypto';
 
 // Polymarket CLOB API base URL
@@ -74,6 +75,11 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // Decrypt credentials (stored encrypted via AES-256-GCM)
+        const apiKey = decrypt(user.clobApiKey);
+        const apiSecret = decrypt(user.clobApiSecret);
+        const apiPassphrase = decrypt(user.clobApiPassphrase);
+
         const body = await request.json();
         const { order, conditionId, tokenId, side, marketTitle } = body;
 
@@ -88,9 +94,9 @@ export async function POST(request: NextRequest) {
         const orderBody = JSON.stringify(order);
         const clobPath = '/order';
         const headers = buildClobHeaders(
-            user.clobApiKey,
-            user.clobApiSecret,
-            user.clobApiPassphrase,
+            apiKey,
+            apiSecret,
+            apiPassphrase,
             'POST',
             clobPath,
             orderBody

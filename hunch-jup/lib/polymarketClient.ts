@@ -213,3 +213,200 @@ export async function deriveOrCreateApiKey(signer: any): Promise<{
         passphrase: created.passphrase,
     };
 }
+
+// ─── EIP-712 Signed Order Creation for Polymarket CLOB ─────────────────
+
+// Re-export Side enum from clob-client for convenience
+export { Side as ClobSide } from '@polymarket/clob-client';
+import type { Side } from '@polymarket/clob-client';
+
+export interface CreateClobOrderParams {
+    /** ethers Signer from the Privy embedded wallet */
+    signer: any;
+    /** User's CLOB API credentials (key, secret, passphrase) */
+    creds: { key: string; secret: string; passphrase: string };
+    /** The YES or NO tokenId for the market (from Gamma API) */
+    tokenId: string;
+    /** Side.BUY or Side.SELL */
+    side: Side;
+    /** Price between 0 and 1 (e.g. 0.55 for 55¢) */
+    price: number;
+    /** Size in outcome token units (e.g. 100 = 100 shares) */
+    size: number;
+    /** Fee rate in basis points — usually 0 for takers, check CLOB */
+    feeRateBps?: number;
+    /** Nonce — if omitted, ClobClient generates one */
+    nonce?: number;
+    /** Expiration unix timestamp — if omitted, ClobClient generates one */
+    expiration?: number;
+    /** Tick size for the market: "0.1" | "0.01" | "0.001" | "0.0001" */
+    tickSize?: '0.1' | '0.01' | '0.001' | '0.0001';
+    /** Whether this is a neg-risk market (multi-outcome event) */
+    negRisk?: boolean;
+}
+
+/**
+ * Create a ClobClient instance configured for the user's wallet + credentials.
+ */
+async function makeClobClient(signer: any, creds: { key: string; secret: string; passphrase: string }) {
+    const { ClobClient } = await import('@polymarket/clob-client');
+    return new ClobClient(
+        CLOB_PROXY_URL,
+        POLYGON_CHAIN_ID,
+        signer,
+        { key: creds.key, secret: creds.secret, passphrase: creds.passphrase },
+        2, // signatureType = POLY_GNOSIS_SAFE
+    );
+}
+
+/**
+ * Create a signed Polymarket CLOB limit order (GTC).
+ *
+ * This uses `ClobClient.createOrder()` which internally:
+ * 1. Builds the EIP-712 typed data for the CTF Exchange
+ * 2. Signs it with the provided signer (Privy embedded wallet)
+ * 3. Returns the complete signed order object ready for POST /order
+ *
+ * @returns The signed order object (ready to submit to CLOB /order endpoint)
+ */
+export async function createSignedClobOrder(params: CreateClobOrderParams): Promise<any> {
+    const clobClient = await makeClobClient(params.signer, params.creds);
+
+    console.log('[polymarketClient] Creating signed CLOB order:', {
+        tokenId: params.tokenId,
+        side: params.side,
+        price: params.price,
+        size: params.size,
+        tickSize: params.tickSize,
+        negRisk: params.negRisk,
+    });
+
+    const signedOrder = await clobClient.createOrder(
+        {
+            tokenID: params.tokenId,
+            side: params.side,
+            price: params.price,
+            size: params.size,
+            feeRateBps: params.feeRateBps ?? 0,
+            nonce: params.nonce,
+            expiration: params.expiration,
+        },
+        {
+            tickSize: params.tickSize || '0.01',
+            negRisk: params.negRisk,
+        },
+    );
+
+    console.log('[polymarketClient] Order signed successfully');
+    return signedOrder;
+}
+
+/**
+ * Create a signed Polymarket CLOB market order (FOK — fill-or-kill).
+ *
+ * Market orders execute immediately at the best available price.
+ * Used for instant buys/sells without specifying an exact price.
+ *
+ * @returns The signed order object
+ */
+export async function createSignedClobMarketOrder(params: Omit<CreateClobOrderParams, 'price'> & { price?: number }): Promise<any> {
+    const clobClient = await makeClobClient(params.signer, params.creds);
+
+    console.log('[polymarketClient] Creating signed CLOB market order:', {
+        tokenId: params.tokenId,
+        side: params.side,
+        size: params.size,
+    });
+
+    const signedOrder = await clobClient.createMarketOrder(
+        {
+            tokenID: params.tokenId,
+            side: params.side,
+            price: params.price,
+            amount: params.size,
+            feeRateBps: params.feeRateBps ?? 0,
+            nonce: params.nonce,
+        },
+        {
+            tickSize: params.tickSize || '0.01',
+            negRisk: params.negRisk,
+        },
+    );
+
+    console.log('[polymarketClient] Market order signed successfully');
+    return signedOrder;
+}
+
+/**
+ * Create, sign, AND post a limit order to the Polymarket CLOB in one step.
+ *
+ * Uses `ClobClient.createAndPostOrder()` which handles EIP-712 signing
+ * and HTTP submission with HMAC auth in a single call.
+ *
+ * Use this for the simplest trade flow. If you need builder attribution,
+ * use `createSignedClobOrder()` instead and relay via `/api/polymarket/order`.
+ *
+ * @returns CLOB response (with orderID, status, etc.)
+ */
+export async function createAndPostClobOrder(params: CreateClobOrderParams): Promise<any> {
+    const clobClient = await makeClobClient(params.signer, params.creds);
+
+    console.log('[polymarketClient] Creating and posting CLOB order:', {
+        tokenId: params.tokenId,
+        side: params.side,
+        price: params.price,
+        size: params.size,
+    });
+
+    const result = await clobClient.createAndPostOrder(
+        {
+            tokenID: params.tokenId,
+            side: params.side,
+            price: params.price,
+            size: params.size,
+            feeRateBps: params.feeRateBps ?? 0,
+            nonce: params.nonce,
+            expiration: params.expiration,
+        },
+        {
+            tickSize: params.tickSize || '0.01',
+            negRisk: params.negRisk,
+        },
+    );
+
+    console.log('[polymarketClient] Order posted to CLOB:', result);
+    return result;
+}
+
+/**
+ * Create, sign, AND post a market order (FOK) to the Polymarket CLOB.
+ *
+ * @returns CLOB response
+ */
+export async function createAndPostClobMarketOrder(params: Omit<CreateClobOrderParams, 'price'> & { price?: number }): Promise<any> {
+    const clobClient = await makeClobClient(params.signer, params.creds);
+
+    console.log('[polymarketClient] Creating and posting CLOB market order:', {
+        tokenId: params.tokenId,
+        side: params.side,
+        size: params.size,
+    });
+
+    const result = await clobClient.createAndPostMarketOrder(
+        {
+            tokenID: params.tokenId,
+            side: params.side,
+            price: params.price,
+            amount: params.size,
+            feeRateBps: params.feeRateBps ?? 0,
+            nonce: params.nonce,
+        },
+        {
+            tickSize: params.tickSize || '0.01',
+            negRisk: params.negRisk,
+        },
+    );
+
+    console.log('[polymarketClient] Market order posted to CLOB:', result);
+    return result;
+}

@@ -596,6 +596,36 @@ export const api = {
         return response.json();
     },
 
+    /**
+     * POST /api/polymarket/order — relay a signed EIP-712 order to the CLOB.
+     *
+     * The client creates and signs the order using ClobClient.createOrder()
+     * with the Privy embedded wallet, then sends the signed order here.
+     * The backend adds HMAC auth headers using the user's stored credentials
+     * and posts to clob.polymarket.com/order.
+     */
+    submitPolymarketOrder: async (params: {
+        order: any;
+        conditionId: string;
+        tokenId: string;
+        side: 'BUY' | 'SELL';
+        marketTitle?: string;
+    }): Promise<{
+        success: boolean;
+        tradeId: string;
+        clobResponse: any;
+    }> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/polymarket/order`, {
+            method: 'POST',
+            body: JSON.stringify(params),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || (error as any)?.details || 'Failed to place order');
+        }
+        return response.json();
+    },
+
     // ─── Bridge (Cross-Chain Funding) ────────────────────────────────────
 
     /** GET /supported-assets — list chains & tokens accepted for bridging */
