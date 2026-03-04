@@ -704,3 +704,61 @@ export async function searchGammaMarkets(
     (Array.isArray(rawMarkets) ? rawMarkets : []).map(transformMarket)
   );
 }
+
+// ============ PUBLIC SEARCH ============
+
+/** Polymarket user profile as returned by the Gamma /public-search endpoint */
+export interface GammaProfile {
+  id: string;
+  name: string | null;
+  pseudonym: string | null;
+  profileImage: string | null;
+  bio: string | null;
+  proxyWallet: string | null;
+  displayUsernamePublic: boolean | null;
+  profileImageOptimized?: {
+    imageUrlOptimized: string | null;
+  } | null;
+}
+
+/** Return type of searchGammaPublic */
+export interface GammaPublicSearchResult {
+  events: TransformedEvent[];
+  profiles: GammaProfile[];
+}
+
+/** Raw Gamma /public-search response shape */
+interface GammaPublicSearchRaw {
+  events?: GammaEvent[] | null;
+  profiles?: GammaProfile[] | null;
+  tags?: any[] | null;
+  pagination?: { hasMore?: boolean; totalResults?: number } | null;
+}
+
+/**
+ * Full-text search across Polymarket events, markets, and profiles.
+ * Uses Gamma API GET /public-search.
+ */
+export async function searchGammaPublic(
+  query: string,
+  options?: { limitPerType?: number }
+): Promise<GammaPublicSearchResult> {
+  const limitPerType = options?.limitPerType ?? 10;
+
+  const raw = await gammaFetch<GammaPublicSearchRaw>('/public-search', {
+    q: query,
+    limit_per_type: limitPerType,
+    events_status: 'active',
+    search_profiles: true,
+    keep_closed_markets: 0,
+    sort: 'volume24hr',
+    ascending: false,
+  }, 0); // no stale cache for search
+
+  const rawEvents = Array.isArray(raw?.events) ? raw.events : [];
+  const events = filterDeadEvents(rawEvents.map(transformEvent));
+
+  const profiles: GammaProfile[] = Array.isArray(raw?.profiles) ? raw.profiles : [];
+
+  return { events, profiles };
+}
