@@ -1,9 +1,14 @@
 /**
- * cryptoPriceSocket.ts — Singleton WebSocket for Polymarket Chainlink crypto prices
+ * cryptoPriceSocket.ts — Proxied crypto price stream
  *
- * Connects to wss://ws-live-data.polymarket.com and subscribes to
- * crypto_prices_chainlink for btc/usd, eth/usd, sol/usd.
+ * Connects to our backend SSE proxy at /api/crypto-prices/stream
+ * which relays Polymarket Chainlink price updates (btc/usd, eth/usd, sol/usd).
+ *
+ * This avoids direct connections to polymarket.com domains,
+ * which are unreachable in certain regions.
  */
+
+import { API_BASE_URL } from './api';
 
 export interface PricePoint {
     timestamp: number; // unix ms
@@ -13,8 +18,6 @@ export interface PricePoint {
 type Asset = 'btc' | 'eth' | 'sol';
 type PriceCallback = (price: number, history: PricePoint[]) => void;
 
-const WS_URL = 'wss://ws-live-data.polymarket.com';
-const PING_INTERVAL_MS = 5_000;
 const RECONNECT_DELAY_MS = 3_000;
 const MAX_HISTORY = 500;
 
@@ -26,12 +29,15 @@ const SYMBOL_MAP: Record<string, Asset> = {
 };
 
 class CryptoPriceSocket {
-    private ws: WebSocket | null = null;
-    private pingTimer: ReturnType<typeof setInterval> | null = null;
+    private xhr: XMLHttpRequest | null = null;
     private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private connected = false;
     private shouldReconnect = true;
     private refCount = 0;
+
+    // SSE parse state
+    private lastReadIndex = 0;
+    private sseBuffer = '';
 
     // Per-asset state
     private latestPrices: Record<Asset, number | null> = { btc: null, eth: null, sol: null };
@@ -75,100 +81,127 @@ class CryptoPriceSocket {
         return [...(this.histories[asset as Asset] || [])];
     }
 
+    // ─── SSE connection via XMLHttpRequest ────────────────────────────────
+    // XHR fires onprogress as chunked data arrives, which is universally
+    // supported in React Native (iOS via NSURLSession, Android via OkHttp).
+
     private connect() {
-        if (this.ws) return;
+        if (this.xhr) return;
         this.shouldReconnect = true;
+        this.sseBuffer = '';
+        this.lastReadIndex = 0;
 
-        try {
-            this.ws = new WebSocket(WS_URL);
+        const url = `${API_BASE_URL}/api/crypto-prices/stream`;
+        const xhr = new XMLHttpRequest();
+        this.xhr = xhr;
 
-            this.ws.onopen = () => {
+        xhr.open('GET', url, true);
+        xhr.setRequestHeader('Accept', 'text/event-stream');
+        xhr.setRequestHeader('Cache-Control', 'no-cache');
+
+        xhr.onreadystatechange = () => {
+            if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
                 this.connected = true;
-                this.sendSubscription();
-                this.startPing();
-            };
-
-            this.ws.onmessage = (event) => {
-                if (event.data === 'PONG') return;
-
-                try {
-                    const msg = JSON.parse(event.data as string);
-                    if (msg.topic === 'crypto_prices_chainlink' && msg.payload) {
-                        this.handlePriceUpdate(msg.payload);
-                    }
-                } catch {
-                    // Ignore parse errors
-                }
-            };
-
-            this.ws.onerror = () => {
-                // onclose will fire after this
-            };
-
-            this.ws.onclose = () => {
-                this.connected = false;
-                this.cleanup();
-                if (this.shouldReconnect && this.refCount > 0) {
-                    this.reconnectTimer = setTimeout(() => {
-                        this.ws = null;
-                        this.connect();
-                    }, RECONNECT_DELAY_MS);
-                }
-            };
-        } catch {
-            // Reconnect on connection failure
-            if (this.shouldReconnect && this.refCount > 0) {
-                this.reconnectTimer = setTimeout(() => {
-                    this.ws = null;
-                    this.connect();
-                }, RECONNECT_DELAY_MS);
             }
+        };
+
+        xhr.onprogress = () => {
+            // Read only new data since last position
+            const newData = xhr.responseText.substring(this.lastReadIndex);
+            this.lastReadIndex = xhr.responseText.length;
+            if (newData) {
+                this.processSSEChunk(newData);
+            }
+        };
+
+        xhr.onerror = () => {
+            this.handleStreamEnd();
+        };
+
+        xhr.onabort = () => {
+            // Intentional abort — don't reconnect (shouldReconnect already false)
+        };
+
+        xhr.onloadend = () => {
+            // Stream ended (server closed, maxDuration hit, or network drop)
+            this.handleStreamEnd();
+        };
+
+        xhr.send();
+    }
+
+    private handleStreamEnd() {
+        this.connected = false;
+        this.xhr = null;
+        this.lastReadIndex = 0;
+        this.sseBuffer = '';
+        if (this.shouldReconnect && this.refCount > 0) {
+            this.scheduleReconnect();
         }
     }
 
     private disconnect() {
         this.shouldReconnect = false;
         this.cleanup();
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-        }
     }
 
     private cleanup() {
-        if (this.pingTimer) {
-            clearInterval(this.pingTimer);
-            this.pingTimer = null;
-        }
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
         }
+        if (this.xhr) {
+            const x = this.xhr;
+            this.xhr = null;
+            try { x.abort(); } catch { /* ignore */ }
+        }
+        this.connected = false;
+        this.lastReadIndex = 0;
+        this.sseBuffer = '';
     }
 
-    private sendSubscription() {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-
-        const msg = JSON.stringify({
-            action: 'subscribe',
-            subscriptions: [
-                { topic: 'crypto_prices_chainlink', type: '*', filters: '{"symbol":"btc/usd"}' },
-                { topic: 'crypto_prices_chainlink', type: '*', filters: '{"symbol":"eth/usd"}' },
-                { topic: 'crypto_prices_chainlink', type: '*', filters: '{"symbol":"sol/usd"}' },
-            ],
-        });
-
-        this.ws.send(msg);
-    }
-
-    private startPing() {
-        if (this.pingTimer) clearInterval(this.pingTimer);
-        this.pingTimer = setInterval(() => {
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                this.ws.send('PING');
+    private scheduleReconnect() {
+        if (this.reconnectTimer) return;
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            if (this.shouldReconnect && this.refCount > 0) {
+                this.connect();
             }
-        }, PING_INTERVAL_MS);
+        }, RECONNECT_DELAY_MS);
     }
+
+    // ─── SSE parser ──────────────────────────────────────────────────────
+    // Buffers partial chunks and splits on double-newline boundaries.
+
+    private processSSEChunk(chunk: string) {
+        this.sseBuffer += chunk;
+
+        // Split on double-newline (SSE event boundary)
+        const parts = this.sseBuffer.split('\n\n');
+        // Last part may be incomplete — keep in buffer
+        this.sseBuffer = parts.pop() || '';
+
+        for (const part of parts) {
+            if (!part.trim()) continue;
+            const lines = part.split('\n');
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = line.substring(6);
+                    try {
+                        const msg = JSON.parse(data);
+                        if (msg.topic === 'crypto_prices_chainlink' && msg.payload) {
+                            this.handlePriceUpdate(msg.payload);
+                        }
+                    } catch {
+                        // Ignore parse errors
+                    }
+                }
+                // SSE comments (:connected, :hb) are silently ignored
+            }
+        }
+    }
+
+    // ─── Price handling (unchanged logic) ─────────────────────────────────
 
     private handlePriceUpdate(payload: { symbol: string; timestamp: number; value: number }) {
         const asset = SYMBOL_MAP[payload.symbol];
@@ -195,7 +228,7 @@ class CryptoPriceSocket {
             try {
                 cb(price, snapshot);
             } catch {
-                // Don't let subscriber errors kill the socket
+                // Don't let subscriber errors kill the stream
             }
         });
     }

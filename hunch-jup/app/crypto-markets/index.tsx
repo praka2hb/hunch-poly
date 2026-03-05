@@ -23,6 +23,81 @@ const CHART_WIDTH = SCREEN_WIDTH - 40;
 const CHART_HEIGHT = 220;
 const CHART_PADDING_Y = 20;
 
+// ─── Smooth chart helpers ─────────────────────────────────────────────────────
+const MAX_CHART_POINTS = 150; // Keep ≤150 points for silky rendering
+const CURVE_TENSION = 0.35;  // Catmull-Rom tension (0.3-0.4 is natural for price data)
+
+/**
+ * Downsample an array of {x,y} points using the Largest-Triangle-Three-Buckets
+ * (LTTB) algorithm.  Preserves the perceptual shape of the curve while
+ * drastically cutting the number of SVG path commands.
+ */
+function downsampleLTTB(
+    data: { x: number; y: number }[],
+    threshold: number,
+): { x: number; y: number }[] {
+    if (data.length <= threshold) return data;
+
+    const sampled: { x: number; y: number }[] = [data[0]];
+    const bucketSize = (data.length - 2) / (threshold - 2);
+
+    for (let i = 1; i < threshold - 1; i++) {
+        const rangeStart = Math.floor((i - 1) * bucketSize) + 1;
+        const rangeEnd = Math.min(Math.floor(i * bucketSize) + 1, data.length);
+
+        // Average of *next* bucket (triangle third vertex)
+        const nextStart = Math.floor(i * bucketSize) + 1;
+        const nextEnd = Math.min(Math.floor((i + 1) * bucketSize) + 1, data.length);
+        let avgX = 0, avgY = 0;
+        for (let j = nextStart; j < nextEnd; j++) { avgX += data[j].x; avgY += data[j].y; }
+        const cnt = nextEnd - nextStart;
+        if (cnt > 0) { avgX /= cnt; avgY /= cnt; }
+
+        // Pick the point in the current bucket that maximises triangle area
+        const prev = sampled[sampled.length - 1];
+        let maxArea = -1, bestIdx = rangeStart;
+        for (let j = rangeStart; j < rangeEnd; j++) {
+            const area = Math.abs(
+                (prev.x - avgX) * (data[j].y - prev.y) -
+                (prev.x - data[j].x) * (avgY - prev.y),
+            );
+            if (area > maxArea) { maxArea = area; bestIdx = j; }
+        }
+        sampled.push(data[bestIdx]);
+    }
+
+    sampled.push(data[data.length - 1]);
+    return sampled;
+}
+
+/**
+ * Build a smooth SVG `d` string from points using Catmull-Rom → cubic Bézier
+ * conversion.  The resulting curve passes exactly through every input point
+ * while maintaining C1 (tangent) continuity between segments.
+ */
+function smoothPath(pts: { x: number; y: number }[], tension: number): string {
+    if (pts.length < 2) return '';
+    if (pts.length === 2) {
+        return `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)} L${pts[1].x.toFixed(1)},${pts[1].y.toFixed(1)}`;
+    }
+
+    let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+        const p0 = pts[Math.max(0, i - 1)];
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const p3 = pts[Math.min(pts.length - 1, i + 2)];
+
+        const cp1x = p1.x + (p2.x - p0.x) * tension / 3;
+        const cp1y = p1.y + (p2.y - p0.y) * tension / 3;
+        const cp2x = p2.x - (p3.x - p1.x) * tension / 3;
+        const cp2y = p2.y - (p3.y - p1.y) * tension / 3;
+
+        d += ` C${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+    }
+    return d;
+}
+
 type Asset = 'btc' | 'eth' | 'sol';
 type Interval = '5m' | '15m';
 
@@ -296,14 +371,16 @@ export default function CryptoMarketsScreen() {
         const adjustedMax = maxPrice + padding;
         const adjustedRange = adjustedMax - adjustedMin || 1;
 
-        const points = priceHistory.map((p, i) => ({
+        const allPoints = priceHistory.map((p, i) => ({
             x: (i / (priceHistory.length - 1)) * CHART_WIDTH,
             y: CHART_PADDING_Y + (1 - (p.price - adjustedMin) / adjustedRange) * (CHART_HEIGHT - 2 * CHART_PADDING_Y),
         }));
 
-        const pathData = points
-            .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
-            .join(' ');
+        // Downsample with LTTB to keep rendering fast without losing visual fidelity
+        const points = downsampleLTTB(allPoints, MAX_CHART_POINTS);
+
+        // Smooth Catmull-Rom spline through all points (cubic Bézier output)
+        const pathData = smoothPath(points, CURVE_TENSION);
 
         // Opening price Y position
         let openingY: number | null = null;
