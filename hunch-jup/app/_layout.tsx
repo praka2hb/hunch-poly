@@ -5,10 +5,10 @@ import "../global.css";
 global.Buffer = Buffer;
 
 import {
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import { PrivyProvider } from '@privy-io/expo';
 import { PrivyElements } from '@privy-io/expo/ui';
@@ -228,65 +228,72 @@ export default function RootLayout() {
       <AuthInitializer>
         <UserProvider>
           <PushNotificationProvider>
-          <AuthFlowGate />
-          <GestureHandlerRootView style={{ flex: 1 }}>
-            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-              <Stack screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="login" options={{ headerShown: false }} />
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="onboarding/link-x" options={{ headerShown: false }} />
-                <Stack.Screen name="onboarding/username" options={{ headerShown: false }} />
-                <Stack.Screen
-                  name="onboarding/wallet-setup"
-                  options={{
-                    headerShown: false,
-                    presentation: 'fullScreenModal',
-                    gestureEnabled: false,
-                  }}
-                />
-                <Stack.Screen name="preferences" options={{ headerShown: false }} />
-                <Stack.Screen name="suggested-followers" options={{ headerShown: false }} />
-                <Stack.Screen
-                  name="event/[ticker]"
-                  options={{
-                    headerShown: false,
-                    presentation: 'card',
-                  }}
-                />
-                <Stack.Screen
-                  name="market/[ticker]"
-                  options={{
-                    headerShown: false,
-                    presentation: 'card',
-                  }}
-                />
-                <Stack.Screen
-                  name="user/[userId]"
-                  options={{
-                    headerShown: false,
-                    presentation: 'card',
-                  }}
-                />
-                <Stack.Screen
-                  name="user/followers/[userId]"
-                  options={{
-                    headerShown: false,
-                    presentation: 'card',
-                  }}
-                />
-                <Stack.Screen
-                  name="trade/[tradeId]"
-                  options={{
-                    headerShown: false,
-                    presentation: 'card',
-                  }}
-                />
-                <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-              </Stack>
-              <StatusBar style="auto" />
-            </ThemeProvider>
-          </GestureHandlerRootView>
-          <PrivyElements />
+            <AuthFlowGate />
+            <GestureHandlerRootView style={{ flex: 1 }}>
+              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                <Stack screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="login" options={{ headerShown: false }} />
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen name="onboarding/link-x" options={{ headerShown: false }} />
+                  <Stack.Screen name="onboarding/username" options={{ headerShown: false }} />
+                  <Stack.Screen
+                    name="onboarding/wallet-setup"
+                    options={{
+                      headerShown: false,
+                      presentation: 'fullScreenModal',
+                      gestureEnabled: false,
+                    }}
+                  />
+                  <Stack.Screen name="preferences" options={{ headerShown: false }} />
+                  <Stack.Screen name="suggested-followers" options={{ headerShown: false }} />
+                  <Stack.Screen
+                    name="event/[ticker]"
+                    options={{
+                      headerShown: false,
+                      presentation: 'card',
+                    }}
+                  />
+                  <Stack.Screen
+                    name="market/[ticker]"
+                    options={{
+                      headerShown: false,
+                      presentation: 'card',
+                    }}
+                  />
+                  <Stack.Screen
+                    name="user/[userId]"
+                    options={{
+                      headerShown: false,
+                      presentation: 'card',
+                    }}
+                  />
+                  <Stack.Screen
+                    name="user/followers/[userId]"
+                    options={{
+                      headerShown: false,
+                      presentation: 'card',
+                    }}
+                  />
+                  <Stack.Screen
+                    name="trade/[tradeId]"
+                    options={{
+                      headerShown: false,
+                      presentation: 'card',
+                    }}
+                  />
+                  <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                  <Stack.Screen
+                    name="crypto-markets/index"
+                    options={{
+                      headerShown: false,
+                      animation: 'slide_from_right',
+                    }}
+                  />
+                </Stack>
+                <StatusBar style="auto" />
+              </ThemeProvider>
+            </GestureHandlerRootView>
+            <PrivyElements />
           </PushNotificationProvider>
         </UserProvider>
       </AuthInitializer>

@@ -1,4 +1,4 @@
-import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PolymarketSearchResult, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse, UserPositionsResponse } from './types';
+import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, CryptoMarketData, CryptoProbabilityData, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PolymarketSearchResult, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse, UserPositionsResponse } from './types';
 
 // ─── Bridge (Cross-Chain) Types ──────────────────────────────────────────────
 export interface BridgeSupportedAsset {
@@ -722,6 +722,42 @@ export const api = {
         }
         const json = await response.json();
         return json as BridgeWithdrawResponse;
+    },
+};
+
+// ─── Crypto Markets API ──────────────────────────────────────────────────────
+export const cryptoMarketsApi = {
+    /** Fetch the current active crypto market for a given asset + interval */
+    fetchCurrentMarket: async (asset: string, interval: string): Promise<CryptoMarketData> => {
+        const url = `${API_BASE_URL}/api/crypto-markets/current?asset=${encodeURIComponent(asset)}&interval=${encodeURIComponent(interval)}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to fetch crypto market');
+        }
+        return response.json();
+    },
+
+    /** Fetch the Up/Down probability from CLOB midpoint */
+    fetchProbability: async (conditionId: string, upTokenId: string): Promise<CryptoProbabilityData> => {
+        const url = `${API_BASE_URL}/api/crypto-markets/probability/${encodeURIComponent(conditionId)}?upTokenId=${encodeURIComponent(upTokenId)}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to fetch probability');
+        }
+        return response.json();
+    },
+
+    /** Fetch the next market by computing the next slug timestamp */
+    fetchNextMarket: async (currentSlug: string, interval: string): Promise<CryptoMarketData & { available: boolean }> => {
+        const url = `${API_BASE_URL}/api/crypto-markets/next?currentSlug=${encodeURIComponent(currentSlug)}&interval=${encodeURIComponent(interval)}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to fetch next market');
+        }
+        return response.json();
     },
 };
 

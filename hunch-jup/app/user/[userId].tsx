@@ -761,7 +761,7 @@ export default function UserProfileScreen() {
             .filter((trade) => trade.marketDetails?.status === 'active')
             .map((trade) => ({
                 marketTicker: trade.marketTicker,
-                eventTicker: trade.marketDetails?.eventTicker || trade.eventTicker,
+                eventTicker: trade.marketDetails?.eventTicker || trade.eventTicker || undefined,
             }));
         const uniqueByTicker = new Map<string, string | undefined>();
         activeTrades.forEach(({ marketTicker, eventTicker }) => {
@@ -816,7 +816,7 @@ export default function UserProfileScreen() {
                 tickers.forEach((t, i) => { if (events[i]?.title) next[t] = events[i].title; });
                 setEventTitleByTicker((prev) => ({ ...prev, ...next }));
             })
-            .catch(() => {});
+            .catch(() => { });
         return () => { cancelled = true; };
     }, [activePositions, previousPositions]);
 
@@ -947,13 +947,12 @@ export default function UserProfileScreen() {
                                 <View className="flex-1">
                                     <Text className="text-[11px] text-txt-secondary mb-0.5">Total PnL</Text>
                                     <Text
-                                        className={`text-[15px] font-semibold ${
-                                            tradeStats.totalPnl > 0
+                                        className={`text-[15px] font-semibold ${tradeStats.totalPnl > 0
                                                 ? 'text-green-500'
                                                 : tradeStats.totalPnl < 0
-                                                ? 'text-[#FF10F0]'
-                                                : 'text-txt-primary'
-                                        }`}
+                                                    ? 'text-[#FF10F0]'
+                                                    : 'text-txt-primary'
+                                            }`}
                                     >
                                         {tradeStats.totalPnl === 0
                                             ? '$0'
@@ -988,31 +987,27 @@ export default function UserProfileScreen() {
                         <View className="mb-4">
                             <View className="flex-row bg-app-card rounded-2xl p-1 border border-border/40">
                                 <TouchableOpacity
-                                    className={`flex-1 py-2.5 rounded-xl items-center ${
-                                        activeTab === 'active' ? 'bg-black' : ''
-                                    }`}
+                                    className={`flex-1 py-2.5 rounded-xl items-center ${activeTab === 'active' ? 'bg-black' : ''
+                                        }`}
                                     onPress={() => animateToTab('active')}
                                     activeOpacity={0.85}
                                 >
                                     <Text
-                                        className={`text-sm font-semibold ${
-                                            activeTab === 'active' ? 'text-white' : 'text-txt-secondary'
-                                        }`}
+                                        className={`text-sm font-semibold ${activeTab === 'active' ? 'text-white' : 'text-txt-secondary'
+                                            }`}
                                     >
                                         Active ({activePositions.length})
                                     </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
-                                    className={`flex-1 py-2.5 rounded-xl items-center ${
-                                        activeTab === 'previous' ? 'bg-black' : ''
-                                    }`}
+                                    className={`flex-1 py-2.5 rounded-xl items-center ${activeTab === 'previous' ? 'bg-black' : ''
+                                        }`}
                                     onPress={() => animateToTab('previous')}
                                     activeOpacity={0.85}
                                 >
                                     <Text
-                                        className={`text-sm font-semibold ${
-                                            activeTab === 'previous' ? 'text-white' : 'text-txt-secondary'
-                                        }`}
+                                        className={`text-sm font-semibold ${activeTab === 'previous' ? 'text-white' : 'text-txt-secondary'
+                                            }`}
                                     >
                                         Previous ({previousPositions.length})
                                     </Text>

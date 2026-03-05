@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const GAMMA_BASE_URL = process.env.POLYMARKET_GAMMA_URL || 'https://gamma-api.polymarket.com';
 
+const INTERVAL_SECONDS: Record<string, number> = {
+    '5m': 300,
+    '15m': 900,
+};
+
 /**
- * GET /api/crypto-markets/next?currentSlug=btc-updown-5m-1772694000&interval=5m
+ * GET /api/crypto-markets/next?currentSlug=btc-updown-5m-1772700000&interval=5m
  *
- * Computes the next market slug by incrementing the timestamp, then checks
- * if that market exists on Gamma.
+ * Computes the next market slug by incrementing the timestamp by intervalSeconds,
+ * then fetches that market from Gamma by slug.
  */
 export async function GET(request: NextRequest) {
     try {
@@ -22,6 +27,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Extract timestamp from slug — last segment after splitting by '-'
+        // e.g. "btc-updown-5m-1772700000" → "1772700000"
         const parts = currentSlug.split('-');
         const currentTimestamp = parts[parts.length - 1];
         const ts = parseInt(currentTimestamp, 10);
@@ -33,8 +39,10 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const intervalSeconds = interval === '15m' ? 900 : 300;
-        const nextTimestamp = ts + intervalSeconds;
+        const intervalSec = INTERVAL_SECONDS[interval] || 300;
+        const nextTimestamp = ts + intervalSec;
+
+        // Replace the timestamp in the slug
         const nextSlug = currentSlug.replace(currentTimestamp, nextTimestamp.toString());
 
         // Fetch next market by slug
@@ -44,20 +52,20 @@ export async function GET(request: NextRequest) {
         );
 
         if (!res.ok) {
-            return NextResponse.json({ available: false });
+            return NextResponse.json({ available: false, nextSlug });
         }
 
         const event = await res.json();
 
-        if (!event || !event.active || !event.markets || event.markets.length === 0) {
-            return NextResponse.json({ available: false });
+        if (!event || !event.markets || event.markets.length === 0) {
+            return NextResponse.json({ available: false, nextSlug });
         }
 
         const market = event.markets[0];
         const clobTokenIds = safeJsonParse(market.clobTokenIds) || [];
         const outcomePrices = safeJsonParse(market.outcomePrices) || [];
 
-        // Infer asset from slug prefix (e.g. "btc-updown-5m-...")
+        // Infer asset from slug prefix (e.g. "btc" from "btc-updown-5m-...")
         const slugPrefix = nextSlug.split('-updown-')[0] || 'btc';
 
         const result = {
@@ -67,7 +75,7 @@ export async function GET(request: NextRequest) {
             downTokenId: clobTokenIds[1] || null,
             marketTitle: event.title,
             currentSlug: event.slug,
-            seriesSlug: event.seriesSlug || '',
+            seriesSlug: `${slugPrefix}-updown-${interval}`,
             asset: slugPrefix,
             interval,
             closeTime: market.endDate ? new Date(market.endDate).getTime() : null,

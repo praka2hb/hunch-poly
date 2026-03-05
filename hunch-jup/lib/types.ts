@@ -466,3 +466,33 @@ export interface PolymarketSearchResult {
     profiles: PolymarketProfile[];
 }
 
+// Live Crypto Markets types
+export interface CryptoMarketData {
+    conditionId: string;
+    upTokenId: string | null;
+    downTokenId: string | null;
+    marketTitle: string;
+    currentSlug: string;
+    seriesSlug: string;
+    asset: string;
+    interval: string;
+    closeTime: number | null;
+    openTime: number | null;
+    upProbability: number | null;
+    downProbability: number | null;
+    lastTradePrice: number | null;
+    bestBid: number | null;
+    bestAsk: number | null;
+    acceptingOrders: boolean;
+    available?: boolean;
+}
+
+export interface CryptoProbabilityData {
+    conditionId: string;
+    upProbability: number;
+    downProbability: number;
+    upPct: number;
+    downPct: number;
+    timestamp: number;
+}
+

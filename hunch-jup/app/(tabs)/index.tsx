@@ -489,13 +489,43 @@ export default function HomeScreen() {
 
         {/* Scrollable content: Filters + MarketRail + Events + News */}
         <>
-          {/* Filters always visible */}
-          <FilterPills
-            categories={categories}
-            selectedCategory={selectedCategory}
-            onCategoryChange={handleCategoryChange}
-            preferredCategories={getPreferredCategories()}
-          />
+          {/* Live pill + Filters always visible */}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity
+              onPress={() => router.push('/crypto-markets' as any)}
+              activeOpacity={0.7}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingHorizontal: 14,
+                paddingVertical: 6,
+                marginLeft: 16,
+                borderRadius: 16,
+                backgroundColor: '#FF3B3010',
+                borderWidth: 1,
+                borderColor: '#FF3B3040',
+              }}
+            >
+              <View
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: '#FF3B30',
+                }}
+              />
+              <Text style={{ fontSize: 14, fontWeight: '700', color: '#FF3B30' }}>Live</Text>
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <FilterPills
+                categories={categories}
+                selectedCategory={selectedCategory}
+                onCategoryChange={handleCategoryChange}
+                preferredCategories={getPreferredCategories()}
+              />
+            </View>
+          </View>
 
           {/* Content with loading states */}
           {loading || filterLoading ? (

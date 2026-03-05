@@ -2,38 +2,57 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const GAMMA_BASE_URL = process.env.POLYMARKET_GAMMA_URL || 'https://gamma-api.polymarket.com';
 
-// Asset tag mapping for fallback queries
-const ASSET_TAG_MAP: Record<string, string> = {
-    btc: 'bitcoin',
-    eth: 'ethereum',
-    sol: 'solana',
+// Interval durations in seconds
+const INTERVAL_SECONDS: Record<string, number> = {
+    '5m': 300,
+    '15m': 900,
 };
 
 /**
- * GET /api/crypto-markets/current?asset=btc&interval=5m
+ * GET /api/crypto-markets?asset=btc&interval=5m
+ * Also re-exported at /api/crypto-markets/current (see current/route.ts)
  *
- * Fetches the current active crypto up-or-down market for a given asset and interval.
- * Primary: uses series_ticker param. Fallback: uses tag_slug filtering.
+ * Computes the current market slug based on the aligned timestamp,
+ * then fetches it from Gamma by slug.
+ *
+ * Slug format: {asset}-updown-{interval}-{alignedUnixTimestamp}
+ * Example: btc-updown-5m-1772700000
+ *
+ * The timestamp is floor-aligned to the interval boundary in UTC.
  */
 export async function GET(request: NextRequest) {
     try {
         const sp = request.nextUrl.searchParams;
         const asset = (sp.get('asset') || 'btc').toLowerCase();
         const interval = sp.get('interval') || '5m';
+        const intervalSec = INTERVAL_SECONDS[interval] || 300;
 
-        const seriesSlug = `${asset}-up-or-down-${interval}`;
+        // Compute aligned timestamp (floor to interval boundary)
+        const nowSec = Math.floor(Date.now() / 1000);
+        const alignedTs = nowSec - (nowSec % intervalSec);
 
-        // Primary approach: series_ticker param
-        let event = await fetchBySeriesTicker(seriesSlug);
+        // Build slug
+        const slug = `${asset}-updown-${interval}-${alignedTs}`;
 
-        // Fallback: tag_slug approach
+        // Primary: fetch by slug
+        let event = await fetchBySlug(slug);
+
+        // If the current aligned window's market isn't found, try the previous one
+        // (market may not have been created yet for the current window)
         if (!event) {
-            event = await fetchByTagSlugs(asset, interval, seriesSlug);
+            const prevTs = alignedTs - intervalSec;
+            const prevSlug = `${asset}-updown-${interval}-${prevTs}`;
+            event = await fetchBySlug(prevSlug);
+        }
+
+        // Fallback: search by tag_slug=crypto and filter client-side
+        if (!event) {
+            event = await fetchByTagFallback(asset, interval);
         }
 
         if (!event || !event.markets || event.markets.length === 0) {
             return NextResponse.json(
-                { error: 'No active market found', asset, interval },
+                { error: 'No active market found', asset, interval, attemptedSlug: slug },
                 { status: 404 }
             );
         }
@@ -48,7 +67,7 @@ export async function GET(request: NextRequest) {
             downTokenId: clobTokenIds[1] || null,
             marketTitle: event.title,
             currentSlug: event.slug,
-            seriesSlug,
+            seriesSlug: `${asset}-updown-${interval}`,
             asset,
             interval,
             closeTime: market.endDate ? new Date(market.endDate).getTime() : null,
@@ -73,29 +92,31 @@ export async function GET(request: NextRequest) {
     }
 }
 
-async function fetchBySeriesTicker(seriesSlug: string): Promise<any | null> {
+/** Fetch an event directly by slug */
+async function fetchBySlug(slug: string): Promise<any | null> {
     try {
-        const url = `${GAMMA_BASE_URL}/events?series_ticker=${encodeURIComponent(seriesSlug)}&active=true&closed=false&limit=1`;
+        const url = `${GAMMA_BASE_URL}/events/slug/${encodeURIComponent(slug)}?include_chat=false`;
         const res = await fetch(url, { next: { revalidate: 0 } });
         if (!res.ok) return null;
-        const events = await res.json();
-        if (Array.isArray(events) && events.length > 0) return events[0];
-        return null;
+        const event = await res.json();
+        if (!event || !event.active || !event.markets || event.markets.length === 0) return null;
+        return event;
     } catch {
         return null;
     }
 }
 
-async function fetchByTagSlugs(asset: string, interval: string, seriesSlug: string): Promise<any | null> {
+/** Fallback: search by tag_slug=crypto, filter for updown markets */
+async function fetchByTagFallback(asset: string, interval: string): Promise<any | null> {
     try {
-        const intervalTag = interval.toUpperCase(); // "5M" or "15M"
-        const assetTag = ASSET_TAG_MAP[asset] || asset;
-        const url = `${GAMMA_BASE_URL}/events?tag_slug=${encodeURIComponent(intervalTag)}&tag_slug=${encodeURIComponent(assetTag)}&active=true&closed=false&limit=5`;
+        const url = `${GAMMA_BASE_URL}/events?tag_slug=crypto&active=true&closed=false&limit=10&order=startDate&ascending=false`;
         const res = await fetch(url, { next: { revalidate: 0 } });
         if (!res.ok) return null;
         const events = await res.json();
         if (!Array.isArray(events)) return null;
-        return events.find((e: any) => e.seriesSlug === seriesSlug) || null;
+        // Find the first event whose slug matches the pattern {asset}-updown-{interval}-*
+        const prefix = `${asset}-updown-${interval}-`;
+        return events.find((e: any) => e.slug?.startsWith(prefix) && e.active) || null;
     } catch {
         return null;
     }
