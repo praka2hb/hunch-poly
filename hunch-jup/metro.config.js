@@ -1,6 +1,7 @@
 // Learn more https://docs.expo.io/guides/customizing-metro
 const { getDefaultConfig } = require("expo/metro-config");
 const { withNativeWind } = require("nativewind/metro");
+const path = require("path");
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
@@ -13,6 +14,15 @@ const resolveRequestWithPackageExports = (context, moduleName, platform) => {
       unstable_conditionNames: ["browser"],
     };
     return ctx.resolveRequest(ctx, moduleName, platform);
+  }
+
+  // Shim Node's `crypto` module for @polymarket/builder-signing-sdk
+  // (HMAC signing happens server-side; client only needs BuilderConfig)
+  if (moduleName === "crypto") {
+    return {
+      type: "sourceFile",
+      filePath: path.resolve(__dirname, "lib", "crypto-shim.js"),
+    };
   }
 
   return context.resolveRequest(context, moduleName, platform);

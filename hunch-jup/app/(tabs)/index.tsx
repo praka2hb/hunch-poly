@@ -599,6 +599,7 @@ export default function HomeScreen() {
         visible={depositSheetVisible}
         onClose={() => setDepositSheetVisible(false)}
         walletAddress={backendUser?.walletAddress}
+        safeAddress={backendUser?.safeAddress}
         onDebitCard={() => {
           if (backendUser?.walletAddress) {
             fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: '10' });

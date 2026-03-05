@@ -182,11 +182,26 @@ export default function WalletSetupScreen() {
             const signer = await getPrivySigner();
             const relayClient = await getRelayClient(signer, safeAddress);
 
-            // Deploy the Safe via the relay
-            const deployResult = await relayClient.deploy();
-            const txHash = deployResult.transactionHash || deployResult.hash || '';
+            const deployResponse = await relayClient.deploy();
 
-            // Confirm with backend
+            // Poll until the deploy tx is mined (matching reference implementation)
+            const { RelayerTransactionState } = await import('@polymarket/builder-relayer-client');
+            const deployResult = await relayClient.pollUntilState(
+                deployResponse.transactionID,
+                [
+                    RelayerTransactionState.STATE_MINED,
+                    RelayerTransactionState.STATE_CONFIRMED,
+                    RelayerTransactionState.STATE_FAILED,
+                ],
+                '60',
+                3000,
+            );
+
+            if (!deployResult || deployResult.state === RelayerTransactionState.STATE_FAILED) {
+                throw new Error('Safe deployment failed');
+            }
+
+            const txHash = deployResult.transactionHash || deployResult.proxyAddress || '';
             await api.confirmSafeDeployed(txHash);
             setCompletedSteps((prev) => new Set([...prev, 2]));
 
@@ -225,12 +240,10 @@ export default function WalletSetupScreen() {
             const relayClient = await getRelayClient(signer, safeAddress);
             const approvalTxs = buildApprovalTransactions();
 
-            // Send all approval transactions via the relay (execute handles batching)
             const executeResult = await relayClient.execute(approvalTxs);
-            const txHash = executeResult.transactionHash || executeResult.hash || '';
+            await executeResult.wait();
 
-            // Confirm with backend
-            await api.confirmApprovalsSet(txHash);
+            await api.confirmApprovalsSet('approvals-confirmed');
             setCompletedSteps((prev) => new Set([...prev, 3]));
 
             if (backendUser) {

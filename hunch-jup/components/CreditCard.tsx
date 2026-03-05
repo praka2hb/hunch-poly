@@ -1,4 +1,6 @@
-import { sendUSDC } from "@/lib/tradeService";
+import { api, BridgeQuoteResponse, BridgeWithdrawResponse } from "@/lib/api";
+import { ethers } from "ethers";
+import { USDC_E_ADDRESS, getRelayClient } from "@/lib/polymarketClient";
 import { Ionicons } from "@expo/vector-icons";
 import { useFundWallet } from '@privy-io/expo/ui';
 import * as Clipboard from 'expo-clipboard';
@@ -22,6 +24,8 @@ interface CreditCardProps {
     tradesCount: number;
     balance?: number;
     walletAddress?: string;
+    /** Safe wallet address for Polymarket trading */
+    safeAddress?: string | null;
     /** Embedded Ethereum wallet instance (Privy) */
     wallet?: any;
     /** Privy wallet provider — used for signing USDC transfers */
@@ -30,7 +34,7 @@ interface CreditCardProps {
     onWithdrawSuccess?: (amount: number) => void;
 }
 
-export default function CreditCard({ tradesCount, balance = 0, walletAddress, wallet, walletProvider, onWithdrawSuccess }: CreditCardProps) {
+export default function CreditCard({ tradesCount, balance = 0, walletAddress, safeAddress, wallet, walletProvider, onWithdrawSuccess }: CreditCardProps) {
     const [isFlipped, setIsFlipped] = useState(false);
     const [copied, setCopied] = useState(false);
     const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -237,6 +241,7 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress, wa
                 visible={depositOpen}
                 onClose={() => setDepositOpen(false)}
                 walletAddress={walletAddress}
+                safeAddress={safeAddress}
                 onDebitCard={() => {
                     if (walletAddress) {
                         fundWallet({ asset: 'USDC', address: walletAddress, amount: '10' });
@@ -249,7 +254,7 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress, wa
                 onClose={() => setWithdrawOpen(false)}
                 submitting={withdrawSubmitting}
                 balance={balance}
-                onSubmit={async ({ toAddress, amount }) => {
+                onSubmit={async ({ toAddress, amount, toChainId, toTokenAddress, kind }) => {
                     if (!walletAddress || !walletProvider) {
                         console.warn('CreditCard: walletProvider not provided, cannot withdraw');
                         setWithdrawOpen(false);
@@ -257,19 +262,102 @@ export default function CreditCard({ tradesCount, balance = 0, walletAddress, wa
                     }
                     try {
                         setWithdrawSubmitting(true);
-                        await sendUSDC({
-                            provider: walletProvider,
-                            wallet,
-                            fromAddress: walletAddress,
-                            toAddress,
-                            amount,
-                            type: 'withdraw',
+
+                        // Step 2: Create withdraw deposit addresses on Polymarket Bridge
+                        const withdrawResp: BridgeWithdrawResponse = await api.createBridgeWithdrawAddresses({
+                            toChainId,
+                            toTokenAddress,
+                            recipientAddress: toAddress.trim(),
                         });
+
+                        // For Polymarket, the trading wallet lives on Polygon (EVM),
+                        // so we always send USDC.e to the EVM deposit address.
+                        const candidateAddrs = [
+                            withdrawResp.address.evm,
+                            // fallback: any EVM-looking address
+                            ...Object.values(withdrawResp.address),
+                        ].filter((v): v is string => typeof v === "string");
+
+                        const depositAddress = candidateAddrs.find((addr) =>
+                            /^0x[a-fA-F0-9]{40}$/.test(addr.trim())
+                        );
+
+                        if (!depositAddress) {
+                            throw new Error("Bridge did not return a usable EVM deposit address");
+                        }
+
+                        // Step 3: Get a quote for this withdraw using the chain-specific deposit address
+                        try {
+                            const quoteRecipient =
+                                kind === "svm" && withdrawResp.address.svm
+                                    ? withdrawResp.address.svm
+                                    : depositAddress;
+
+                            const quote: BridgeQuoteResponse = await api.getBridgeWithdrawQuote({
+                                amountUsd: amount,
+                                toChainId,
+                                toTokenAddress,
+                                recipientAddress: quoteRecipient,
+                            });
+                            console.log("[CreditCard] Withdraw quote:", quote);
+                        } catch (quoteErr) {
+                            console.warn("[CreditCard] Withdraw quote failed, proceeding anyway:", quoteErr);
+                        }
+
+                        // Step 4: Send USDC.e from the Safe wallet via relay client (gasless)
+                        // If safeAddress is available, use the relay client for gasless tx from Safe.
+                        // Otherwise fall back to direct EOA transfer.
+                        if (safeAddress) {
+                            // Build ethers signer from wallet provider
+                            await walletProvider.request({
+                                method: "wallet_switchEthereumChain",
+                                params: [{ chainId: "0x89" }], // Polygon mainnet
+                            });
+                            const ethersProvider = new ethers.providers.Web3Provider(walletProvider);
+                            const signer = ethersProvider.getSigner();
+
+                            // Get relay client for gasless Safe tx
+                            const relayClient = await getRelayClient(signer, safeAddress);
+
+                            // ABI-encode ERC-20 transfer(address,uint256)
+                            const rawAmount = BigInt(Math.floor(amount * 1_000_000)); // 6 decimals
+                            const iface = new ethers.utils.Interface([
+                                "function transfer(address to, uint256 amount) returns (bool)",
+                            ]);
+                            const transferData = iface.encodeFunctionData("transfer", [
+                                depositAddress,
+                                rawAmount.toString(),
+                            ]);
+
+                            // Execute via relay client (gasless, from Safe)
+                            await relayClient.execute([{
+                                to: USDC_E_ADDRESS,
+                                data: transferData,
+                                value: "0",
+                            }]);
+                        } else {
+                            // Fallback: direct EOA transfer (requires gas)
+                            await walletProvider.request({
+                                method: "wallet_switchEthereumChain",
+                                params: [{ chainId: "0x89" }], // Polygon mainnet
+                            });
+                            const ethersProvider = new ethers.providers.Web3Provider(walletProvider);
+                            const signer = ethersProvider.getSigner();
+                            const usdcContract = new ethers.Contract(
+                                USDC_E_ADDRESS,
+                                ["function transfer(address to, uint256 amount) returns (bool)"],
+                                signer
+                            );
+                            const rawAmount = BigInt(Math.floor(amount * 1_000_000)); // 6 decimals
+                            const tx = await usdcContract.transfer(depositAddress, rawAmount);
+                            await tx.wait(1);
+                        }
+
                         // Optimistic update — instant balance feedback
                         onWithdrawSuccess?.(amount);
                         setWithdrawOpen(false);
                     } catch (err) {
-                        console.error('Withdraw USDC error:', err);
+                        console.error("Withdraw bridge error:", err);
                     } finally {
                         setWithdrawSubmitting(false);
                     }

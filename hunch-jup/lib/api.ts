@@ -1,4 +1,4 @@
-import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse, UserPositionsResponse } from './types';
+import { AuthError, BootstrapOAuthUserRequest, BootstrapOAuthUserResponse, CandleData, CopySettings, CreateCopySettingsRequest, CreatePostRequest, CreateTradeRequest, DelegationStatus, DFlowCandlesticksResponse, Event, EventEvidence, EvidenceResponse, Follow, Market, OnboardingStep, PolymarketSearchResult, PositionsResponse, Post, Series, SyncUserRequest, TagsResponse, Trade, User, UsernameCheckResponse, UserPositionsResponse } from './types';
 
 // ─── Bridge (Cross-Chain) Types ──────────────────────────────────────────────
 export interface BridgeSupportedAsset {
@@ -28,6 +28,41 @@ export interface BridgeDepositResponse {
     note: string;
 }
 
+export interface BridgeQuoteResponse {
+    estCheckoutTimeMs: number;
+    estInputUsd: number;
+    estOutputUsd: number;
+    estToTokenBaseUnit: string;
+    quoteId: string;
+    estFeeBreakdown?: {
+        gasUsd?: number;
+        appFeeLabel?: string;
+        appFeePercent?: number;
+        appFeeUsd?: number;
+        fillCostPercent?: number;
+        fillCostUsd?: number;
+        maxSlippage?: number;
+        minReceived?: number;
+        swapImpact?: number;
+        swapImpactUsd?: number;
+        totalImpact?: number;
+        totalImpactUsd?: number;
+        [key: string]: any;
+    };
+    [key: string]: any;
+}
+
+export interface BridgeWithdrawResponse {
+    address: {
+        evm?: string;
+        svm?: string;
+        tron?: string;
+        btc?: string;
+        [key: string]: string | undefined;
+    };
+    note?: string;
+}
+
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hunch-poly.vercel.app';
 export { API_BASE_URL };
 const JUPITER_PREDICTION_BASE_PATH = `${API_BASE_URL}/api/jupiter-prediction`;
@@ -37,7 +72,7 @@ let _getAccessToken: (() => Promise<string | null>) | null = null;
 
 export const setAccessTokenGetter = (getter: () => Promise<string | null>) => {
     _getAccessToken = getter;
-}; 
+};
 
 // Helper to safely parse JSON responses
 const safeJsonParse = async (response: Response) => {
@@ -651,6 +686,43 @@ export const api = {
         }
         return response.json();
     },
+
+    /** POST /api/bridge/quote — preview cross-chain withdraw fees and output */
+    getBridgeWithdrawQuote: async (params: {
+        amountUsd: number;
+        toChainId: string;
+        toTokenAddress: string;
+        recipientAddress: string;
+    }): Promise<BridgeQuoteResponse> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/bridge/quote`, {
+            method: 'POST',
+            body: JSON.stringify(params),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to fetch withdraw quote');
+        }
+        const json = await response.json();
+        return json as BridgeQuoteResponse;
+    },
+
+    /** POST /api/bridge/withdraw — create withdraw deposit addresses for Polymarket Safe */
+    createBridgeWithdrawAddresses: async (params: {
+        toChainId: string;
+        toTokenAddress: string;
+        recipientAddress: string;
+    }): Promise<BridgeWithdrawResponse> => {
+        const response = await authenticatedFetch(`${API_BASE_URL}/api/bridge/withdraw`, {
+            method: 'POST',
+            body: JSON.stringify(params),
+        });
+        if (!response.ok) {
+            const error = await safeJsonParse(response);
+            throw new Error((error as any)?.error || 'Failed to create withdraw addresses');
+        }
+        const json = await response.json();
+        return json as BridgeWithdrawResponse;
+    },
 };
 
 const toNumberSafe = (value: unknown): number | null => {
@@ -774,6 +846,9 @@ const mapJupiterMarketToMarket = (market: any, eventId?: string): Market => {
     // Volume: Polymarket sends volume in USD directly via pricing
     const volume = toNumberSafe(market?.pricing?.volume) ?? toNumberSafe(market?.volume) ?? undefined;
 
+    // Extract CLOB token IDs (Polymarket passes them as tokens: [yesTokenId, noTokenId])
+    const tokens = Array.isArray(market?.tokens) ? market.tokens : [];
+
     return {
         ticker: market?.marketId || market?.condition_id || '',
         eventTicker: eventId || market?.eventId,
@@ -793,6 +868,8 @@ const mapJupiterMarketToMarket = (market: any, eventId?: string): Market => {
         yesAsk: buyYes !== null ? String(buyYes) : null,
         noBid: sellNo !== null ? String(sellNo) : null,
         noAsk: buyNo !== null ? String(buyNo) : null,
+        yesMint: tokens[0] || market?.yesMint || undefined,
+        noMint: tokens[1] || market?.noMint || undefined,
         image_url:
             market?.image_url ||
             market?.eventImageUrl ||
@@ -1352,6 +1429,46 @@ export const marketsApi = {
         } finally {
             candlestickInFlightRequests.delete(requestUrl);
         }
+    },
+
+    /** Search Polymarket events, markets, and profiles via Gamma API /public-search */
+    searchPolymarket: async (query: string, limit: number = 10): Promise<PolymarketSearchResult> => {
+        const response = await fetch(
+            `${API_BASE_URL}/api/search/polymarket?q=${encodeURIComponent(query)}&limit=${limit}`
+        );
+        if (!response.ok) {
+            throw new Error(`Search failed: ${response.statusText}`);
+        }
+        const data = await response.json();
+        // Map Gamma events to our Event type
+        const events: Event[] = (data.events || []).map((e: any) => ({
+            eventId: e.slug || e.id,
+            ticker: e.slug || e.id,
+            title: e.title,
+            subtitle: e.description,
+            category: e.category,
+            volume: e.volume,
+            volume24h: e.volume24hr,
+            imageUrl: e.image || e.icon || null,
+            isLive: e.active,
+            markets: (e.markets || []).map((m: any) => {
+                const prices = m.prices || [];
+                return {
+                    marketId: m.conditionId || m.id,
+                    ticker: m.conditionId || m.id,
+                    title: m.question || m.title,
+                    subtitle: m.description,
+                    status: m.active ? 'active' : (m.closed ? 'closed' : 'inactive'),
+                    volume: m.volumeNum,
+                    image_url: m.image || m.icon || null,
+                    isLive: m.isLive,
+                    outcomeLabel: m.outcomeLabel,
+                    yesBid: prices[0] != null ? String(prices[0]) : null,
+                    noBid: prices[1] != null ? String(prices[1]) : null,
+                };
+            }),
+        }));
+        return { events, profiles: data.profiles || [] };
     },
 };
 

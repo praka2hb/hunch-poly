@@ -290,6 +290,7 @@ export default function ProfileScreen() {
     };
 
     const walletAddress = profileData?.walletAddress || backendUser?.walletAddress;
+    const safeAddress = backendUser?.safeAddress;
 
     const loadSolBalance = useCallback(async () => {
         if (!walletAddress) {
@@ -313,18 +314,21 @@ export default function ProfileScreen() {
     }, [walletAddress]);
 
     const loadUsdcBalance = useCallback(async () => {
-        if (!walletAddress) {
+        // Query Safe address for USDC balance if available (trading wallet),
+        // otherwise fall back to EOA address.
+        const balanceAddress = safeAddress || walletAddress;
+        if (!balanceAddress) {
             setUsdcBalance(null);
             return;
         }
         try {
-            const balance = await fetchPolygonUsdcBalance(walletAddress);
+            const balance = await fetchPolygonUsdcBalance(balanceAddress);
             setUsdcBalance(balance);
         } catch (error) {
             console.error("Failed to load USDC balance:", error);
             setUsdcBalance(null);
         }
-    }, [walletAddress]);
+    }, [safeAddress, walletAddress]);
 
     const activePositions = positions.active;
     const previousPositions = positions.previous;
@@ -340,7 +344,7 @@ export default function ProfileScreen() {
                 tickers.forEach((t, i) => { if (events[i]?.title) next[t] = events[i].title; });
                 setEventTitleByTicker((prev) => ({ ...prev, ...next }));
             })
-            .catch(() => {});
+            .catch(() => { });
         return () => { cancelled = true; };
     }, [activePositions, previousPositions]);
 
@@ -610,6 +614,7 @@ export default function ProfileScreen() {
                                 tradesCount={trades.length}
                                 balance={cashBalance}
                                 walletAddress={walletAddress || ""}
+                                safeAddress={safeAddress}
                                 wallet={ethereumWallet}
                                 walletProvider={walletProvider}
                                 onWithdrawSuccess={(amount) => {
@@ -932,6 +937,7 @@ export default function ProfileScreen() {
                 visible={depositSheetVisible}
                 onClose={() => setDepositSheetVisible(false)}
                 walletAddress={backendUser?.walletAddress}
+                safeAddress={safeAddress}
                 onDebitCard={() => {
                     if (backendUser?.walletAddress) {
                         fundWallet({ asset: 'USDC', address: backendUser.walletAddress, amount: '10' });

@@ -446,3 +446,23 @@ export interface JupiterPredictionOrderResponse {
         newSizeUsd?: string;
     };
 }
+
+// Polymarket Gamma API search types
+export interface PolymarketProfile {
+    id: string;
+    name: string | null;
+    pseudonym: string | null;
+    profileImage: string | null;
+    bio: string | null;
+    proxyWallet: string | null;
+    displayUsernamePublic: boolean | null;
+    profileImageOptimized?: {
+        imageUrlOptimized: string | null;
+    } | null;
+}
+
+export interface PolymarketSearchResult {
+    events: Event[];
+    profiles: PolymarketProfile[];
+}
+

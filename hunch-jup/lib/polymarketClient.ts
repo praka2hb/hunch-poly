@@ -57,6 +57,23 @@ async function createBuilderConfig() {
     });
 }
 
+// ─── Safe Address Derivation ────────────────────────────────────────────
+
+/**
+ * Derive the deterministic Safe address from an EOA using the SDK.
+ * Matches the reference implementation from @polymarket/builder-relayer-client.
+ */
+export async function deriveSafeAddress(eoaAddress: string): Promise<string> {
+    const { deriveSafe } = await import(
+        '@polymarket/builder-relayer-client/dist/builder/derive'
+    );
+    const { getContractConfig } = await import(
+        '@polymarket/builder-relayer-client/dist/config'
+    );
+    const config = getContractConfig(POLYGON_CHAIN_ID);
+    return deriveSafe(eoaAddress, config.SafeContracts.SafeFactory);
+}
+
 // ─── RelayClient Initialization ────────────────────────────────────────
 
 /**
@@ -79,7 +96,6 @@ export async function getRelayClient(signer: any, _safeAddress: string) {
         POLYGON_CHAIN_ID,
         signer,
         builderConfig,
-        'SAFE' as any,
     );
 
     return relayClient;
@@ -124,37 +140,44 @@ export function buildApprovalTransactions() {
         // ERC-20 USDC approvals
         {
             to: USDC_E_ADDRESS,
+            operation: 0, // OperationType.Call
             data: encodeErc20Approve(CTF_CONTRACT),
             value: '0',
         },
         {
             to: USDC_E_ADDRESS,
+            operation: 0,
             data: encodeErc20Approve(CTF_EXCHANGE),
             value: '0',
         },
         {
             to: USDC_E_ADDRESS,
+            operation: 0,
             data: encodeErc20Approve(NEG_RISK_CTF_EXCHANGE),
             value: '0',
         },
         {
             to: USDC_E_ADDRESS,
+            operation: 0,
             data: encodeErc20Approve(NEG_RISK_ADAPTER),
             value: '0',
         },
         // ERC-1155 outcome token approvals
         {
             to: CTF_CONTRACT,
+            operation: 0,
             data: encodeErc1155SetApprovalForAll(CTF_EXCHANGE),
             value: '0',
         },
         {
             to: CTF_CONTRACT,
+            operation: 0,
             data: encodeErc1155SetApprovalForAll(NEG_RISK_CTF_EXCHANGE),
             value: '0',
         },
         {
             to: CTF_CONTRACT,
+            operation: 0,
             data: encodeErc1155SetApprovalForAll(NEG_RISK_ADAPTER),
             value: '0',
         },
@@ -183,8 +206,6 @@ export async function deriveOrCreateApiKey(signer: any): Promise<{
         CLOB_PROXY_URL,
         POLYGON_CHAIN_ID,
         signer,
-        undefined, // no creds yet
-        2, // signatureType = POLY_GNOSIS_SAFE
     );
 
     try {
@@ -216,15 +237,28 @@ export async function deriveOrCreateApiKey(signer: any): Promise<{
 
 // ─── EIP-712 Signed Order Creation for Polymarket CLOB ─────────────────
 
-// Re-export Side enum from clob-client for convenience
-export { Side as ClobSide } from '@polymarket/clob-client';
-import type { Side } from '@polymarket/clob-client';
+// Local ClobSide definition — mirrors the Side enum from @polymarket/clob-client.
+// We intentionally do NOT re-export from that package at the top level because
+// @polymarket/clob-client bundles `browser-or-node` which accesses
+// `navigator.userAgent` at module-load time and crashes in React Native.
+// All actual clob-client imports are kept inside async functions (dynamic import)
+// so they only execute when a trade is placed, after polyfills are in place.
+export const ClobSide = {
+    BUY: 'BUY' as const,
+    SELL: 'SELL' as const,
+} as const;
+export type ClobSideValue = typeof ClobSide[keyof typeof ClobSide];
+
+// Internal type alias — resolved lazily inside functions
+type Side = 'BUY' | 'SELL';
 
 export interface CreateClobOrderParams {
     /** ethers Signer from the Privy embedded wallet */
     signer: any;
     /** User's CLOB API credentials (key, secret, passphrase) */
     creds: { key: string; secret: string; passphrase: string };
+    /** Derived Safe proxy address — used as the maker in EIP-712 signatures */
+    safeAddress: string;
     /** The YES or NO tokenId for the market (from Gamma API) */
     tokenId: string;
     /** Side.BUY or Side.SELL */
@@ -247,15 +281,26 @@ export interface CreateClobOrderParams {
 
 /**
  * Create a ClobClient instance configured for the user's wallet + credentials.
+ * The Safe address is required so EIP-712 signatures use the Safe as maker.
+ * BuilderConfig provides builder order attribution via remote signing.
  */
-async function makeClobClient(signer: any, creds: { key: string; secret: string; passphrase: string }) {
+async function makeClobClient(
+    signer: any,
+    creds: { key: string; secret: string; passphrase: string },
+    safeAddress: string,
+) {
     const { ClobClient } = await import('@polymarket/clob-client');
+    const builderConfig = await createBuilderConfig();
     return new ClobClient(
         CLOB_PROXY_URL,
         POLYGON_CHAIN_ID,
         signer,
         { key: creds.key, secret: creds.secret, passphrase: creds.passphrase },
-        2, // signatureType = POLY_GNOSIS_SAFE
+        2, // signatureType = POLY_GNOSIS_SAFE (EOA signs on behalf of Safe)
+        safeAddress,
+        undefined, // mandatory placeholder
+        false,
+        builderConfig,
     );
 }
 
@@ -270,7 +315,7 @@ async function makeClobClient(signer: any, creds: { key: string; secret: string;
  * @returns The signed order object (ready to submit to CLOB /order endpoint)
  */
 export async function createSignedClobOrder(params: CreateClobOrderParams): Promise<any> {
-    const clobClient = await makeClobClient(params.signer, params.creds);
+    const clobClient = await makeClobClient(params.signer, params.creds, params.safeAddress);
 
     console.log('[polymarketClient] Creating signed CLOB order:', {
         tokenId: params.tokenId,
@@ -284,7 +329,7 @@ export async function createSignedClobOrder(params: CreateClobOrderParams): Prom
     const signedOrder = await clobClient.createOrder(
         {
             tokenID: params.tokenId,
-            side: params.side,
+            side: params.side as any,
             price: params.price,
             size: params.size,
             feeRateBps: params.feeRateBps ?? 0,
@@ -310,7 +355,7 @@ export async function createSignedClobOrder(params: CreateClobOrderParams): Prom
  * @returns The signed order object
  */
 export async function createSignedClobMarketOrder(params: Omit<CreateClobOrderParams, 'price'> & { price?: number }): Promise<any> {
-    const clobClient = await makeClobClient(params.signer, params.creds);
+    const clobClient = await makeClobClient(params.signer, params.creds, params.safeAddress);
 
     console.log('[polymarketClient] Creating signed CLOB market order:', {
         tokenId: params.tokenId,
@@ -321,7 +366,7 @@ export async function createSignedClobMarketOrder(params: Omit<CreateClobOrderPa
     const signedOrder = await clobClient.createMarketOrder(
         {
             tokenID: params.tokenId,
-            side: params.side,
+            side: params.side as any,
             price: params.price,
             amount: params.size,
             feeRateBps: params.feeRateBps ?? 0,
@@ -349,7 +394,7 @@ export async function createSignedClobMarketOrder(params: Omit<CreateClobOrderPa
  * @returns CLOB response (with orderID, status, etc.)
  */
 export async function createAndPostClobOrder(params: CreateClobOrderParams): Promise<any> {
-    const clobClient = await makeClobClient(params.signer, params.creds);
+    const clobClient = await makeClobClient(params.signer, params.creds, params.safeAddress);
 
     console.log('[polymarketClient] Creating and posting CLOB order:', {
         tokenId: params.tokenId,
@@ -361,7 +406,7 @@ export async function createAndPostClobOrder(params: CreateClobOrderParams): Pro
     const result = await clobClient.createAndPostOrder(
         {
             tokenID: params.tokenId,
-            side: params.side,
+            side: params.side as any,
             price: params.price,
             size: params.size,
             feeRateBps: params.feeRateBps ?? 0,
@@ -384,7 +429,7 @@ export async function createAndPostClobOrder(params: CreateClobOrderParams): Pro
  * @returns CLOB response
  */
 export async function createAndPostClobMarketOrder(params: Omit<CreateClobOrderParams, 'price'> & { price?: number }): Promise<any> {
-    const clobClient = await makeClobClient(params.signer, params.creds);
+    const clobClient = await makeClobClient(params.signer, params.creds, params.safeAddress);
 
     console.log('[polymarketClient] Creating and posting CLOB market order:', {
         tokenId: params.tokenId,
@@ -395,7 +440,7 @@ export async function createAndPostClobMarketOrder(params: Omit<CreateClobOrderP
     const result = await clobClient.createAndPostMarketOrder(
         {
             tokenID: params.tokenId,
-            side: params.side,
+            side: params.side as any,
             price: params.price,
             amount: params.size,
             feeRateBps: params.feeRateBps ?? 0,

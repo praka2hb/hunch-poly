@@ -32,17 +32,17 @@ function EthLogo({ size = 20 }: { size?: number }) {
     return (
         <Svg width={size} height={size} viewBox="0 0 32 32">
             {/* upper-left face */}
-            <Path d="M16 2L0 17L16 12Z" fill="#8197EE"/>
+            <Path d="M16 2L0 17L16 12Z" fill="#8197EE" />
             {/* upper-right face */}
-            <Path d="M16 2L16 12L32 17Z" fill="#627EEA"/>
+            <Path d="M16 2L16 12L32 17Z" fill="#627EEA" />
             {/* mid-left face */}
-            <Path d="M0 17L16 22L16 12Z" fill="#627EEA" fillOpacity={0.5}/>
+            <Path d="M0 17L16 22L16 12Z" fill="#627EEA" fillOpacity={0.5} />
             {/* mid-right face */}
-            <Path d="M32 17L16 12L16 22Z" fill="#627EEA"/>
+            <Path d="M32 17L16 12L16 22Z" fill="#627EEA" />
             {/* lower-left face */}
-            <Path d="M0 17L16 30L16 22Z" fill="#8197EE" fillOpacity={0.8}/>
+            <Path d="M0 17L16 30L16 22Z" fill="#8197EE" fillOpacity={0.8} />
             {/* lower-right face */}
-            <Path d="M16 22L16 30L32 17Z" fill="#627EEA"/>
+            <Path d="M16 22L16 30L32 17Z" fill="#627EEA" />
         </Svg>
     );
 }
@@ -52,16 +52,16 @@ function SolLogo({ size = 20 }: { size?: number }) {
         <Svg width={size} height={size} viewBox="0 0 32 32">
             <Defs>
                 <LinearGradient id="solG" x1="0" y1="0" x2="1" y2="0">
-                    <Stop offset="0%" stopColor="#9945FF"/>
-                    <Stop offset="100%" stopColor="#14F195"/>
+                    <Stop offset="0%" stopColor="#9945FF" />
+                    <Stop offset="100%" stopColor="#14F195" />
                 </LinearGradient>
             </Defs>
             {/* top bar — leans upper-right */}
-            <Path d="M5,3 L30,3 L25,9 L0,9 Z" fill="url(#solG)"/>
+            <Path d="M5,3 L30,3 L25,9 L0,9 Z" fill="url(#solG)" />
             {/* mid bar */}
-            <Path d="M5,13 L30,13 L25,19 L0,19 Z" fill="url(#solG)"/>
+            <Path d="M5,13 L30,13 L25,19 L0,19 Z" fill="url(#solG)" />
             {/* bottom bar — reversed taper */}
-            <Path d="M0,23 L25,23 L30,29 L5,29 Z" fill="url(#solG)"/>
+            <Path d="M0,23 L25,23 L30,29 L5,29 Z" fill="url(#solG)" />
         </Svg>
     );
 }
@@ -69,7 +69,7 @@ function SolLogo({ size = 20 }: { size?: number }) {
 function BtcLogo({ size = 20 }: { size?: number }) {
     return (
         <Svg width={size} height={size} viewBox="0 0 32 32">
-            <Circle cx="16" cy="16" r="16" fill="#F7931A"/>
+            <Circle cx="16" cy="16" r="16" fill="#F7931A" />
             <SvgText
                 x="16"
                 y="22"
@@ -85,20 +85,20 @@ function BtcLogo({ size = 20 }: { size?: number }) {
 function TronLogo({ size = 20 }: { size?: number }) {
     return (
         <Svg width={size} height={size} viewBox="0 0 32 32">
-            <Circle cx="16" cy="16" r="16" fill="#CC0000"/>
+            <Circle cx="16" cy="16" r="16" fill="#CC0000" />
             {/* horizontal bar */}
-            <Rect x="7" y="10.5" width="18" height="3.5" rx="1.5" fill="white"/>
+            <Rect x="7" y="10.5" width="18" height="3.5" rx="1.5" fill="white" />
             {/* vertical stem */}
-            <Rect x="14.5" y="10.5" width="3" height="12" rx="1" fill="white"/>
+            <Rect x="14.5" y="10.5" width="3" height="12" rx="1" fill="white" />
         </Svg>
     );
 }
 
 function ChainLogo({ chainKey, size }: { chainKey: ChainKey; size: number }) {
-    if (chainKey === "evm") return <EthLogo size={size}/>;
-    if (chainKey === "svm") return <SolLogo size={size}/>;
-    if (chainKey === "btc") return <BtcLogo size={size}/>;
-    if (chainKey === "tron") return <TronLogo size={size}/>;
+    if (chainKey === "evm") return <EthLogo size={size} />;
+    if (chainKey === "svm") return <SolLogo size={size} />;
+    if (chainKey === "btc") return <BtcLogo size={size} />;
+    if (chainKey === "tron") return <TronLogo size={size} />;
     return null;
 }
 
@@ -117,6 +117,8 @@ interface DepositSheetProps {
     visible: boolean;
     onClose: () => void;
     walletAddress?: string;
+    /** Safe wallet address — used for bridge deposit so funds land in the trading wallet */
+    safeAddress?: string | null;
     /** Called when user picks "Debit Card" — opens Privy fund UI */
     onDebitCard: () => void;
 }
@@ -125,6 +127,7 @@ export default function DepositSheet({
     visible,
     onClose,
     walletAddress,
+    safeAddress,
     onDebitCard,
 }: DepositSheetProps) {
     const insets = useSafeAreaInsets();
@@ -221,7 +224,10 @@ export default function DepositSheet({
     }, [onDebitCard, handleClose]);
 
     const handleCrossChain = useCallback(async () => {
-        if (!walletAddress) {
+        // Use Safe address for deposits (funds land in trading wallet);
+        // fall back to EOA walletAddress if Safe not yet set up.
+        const depositTarget = safeAddress || walletAddress;
+        if (!depositTarget) {
             setError("Wallet address not available");
             return;
         }
@@ -233,7 +239,7 @@ export default function DepositSheet({
         try {
             const [assetsResp, depositResp] = await Promise.all([
                 api.getBridgeSupportedAssets(),
-                api.createBridgeDepositAddresses(walletAddress),
+                api.createBridgeDepositAddresses(depositTarget),
             ]);
             setSupportedAssets(assetsResp.supportedAssets || []);
             setDepositAddresses(depositResp);
@@ -243,7 +249,7 @@ export default function DepositSheet({
         } finally {
             setLoading(false);
         }
-    }, [walletAddress]);
+    }, [safeAddress, walletAddress]);
 
     const copyAddress = async (key: string, address: string) => {
         await Clipboard.setStringAsync(address);
@@ -378,7 +384,7 @@ export default function DepositSheet({
                                             }}
                                         >
                                             <View style={{ opacity: active ? 1 : 0.5 }}>
-                                                <ChainLogo chainKey={c.key} size={16}/>
+                                                <ChainLogo chainKey={c.key} size={16} />
                                             </View>
                                             <Text style={[styles.chainTabLabel, active && styles.chainTabLabelActive]}>
                                                 {c.shortLabel}
@@ -404,7 +410,7 @@ export default function DepositSheet({
                                         />
                                     </View>
                                     <View style={styles.chainNameRow}>
-                                        <ChainLogo chainKey={selectedChain} size={16}/>
+                                        <ChainLogo chainKey={selectedChain} size={16} />
                                         <Text style={styles.chainNameLabel}>{chainMeta.label}</Text>
                                     </View>
                                 </View>

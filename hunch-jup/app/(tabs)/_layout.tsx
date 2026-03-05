@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Import theme
 import { Theme } from "@/constants/theme";
+import { useSafeSetup } from "@/hooks/useSafeSetup";
 
 // Tab configuration
 const TAB_CONFIG = [
@@ -202,11 +203,14 @@ export default function TabLayout() {
   const router = useRouter();
   const segments = useSegments();
 
+  // Auto-derive + deploy Safe wallet in background after login
+  useSafeSetup();
+
   useEffect(() => {
     if (!isReady) return;
 
     const inTabs = segments[0] === '(tabs)';
-    
+
     if (inTabs && !user && !isDevMode) {
       router.replace('/login');
     }

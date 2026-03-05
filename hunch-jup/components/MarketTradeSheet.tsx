@@ -5,9 +5,10 @@ import TradeQuoteSheet from '@/components/TradeQuoteSheet';
 import { Theme } from '@/constants/theme';
 import { api, getEventDetails, marketsApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
-import { executeTrade, fromRawAmount, requestOrder, toRawAmount } from "@/lib/tradeService";
-import { fetchPolygonUsdcBalance } from "@/lib/polygon";
+import { createSignedClobOrder, ClobSide, getRelayClient, buildApprovalTransactions, deriveOrCreateApiKey, deriveSafeAddress } from "@/lib/polymarketClient";
+import { fetchPolygonUsdcBalance, isSafeDeployedOnChain } from "@/lib/polygon";
 import { User as BackendUser, CandleData, Market } from "@/lib/types";
+import { ethers } from "ethers";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
@@ -38,69 +39,89 @@ const SwipeToTrade = ({
     const translateX = useRef(new Animated.Value(0)).current;
     const [trackWidth, setTrackWidth] = useState(0);
     const thumbWidth = 56;
-    const startXRef = useRef(0);
     const lastHapticRef = useRef(0);
+    const maxSwipeRef = useRef(0);
+    const disabledRef = useRef(disabled);
+    const isLoadingRef = useRef(isLoading);
+    const onSwipeCompleteRef = useRef(onSwipeComplete);
+    disabledRef.current = disabled;
+    isLoadingRef.current = isLoading;
+    onSwipeCompleteRef.current = onSwipeComplete;
 
     const maxSwipe = Math.max(0, trackWidth - thumbWidth - 8);
+    maxSwipeRef.current = maxSwipe;
 
-    const handleTouchStart = (e: any) => {
-        if (disabled || isLoading) return;
-        startXRef.current = e.nativeEvent.pageX;
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    };
+    const thumbPanResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onStartShouldSetPanResponderCapture: () => true,
+            onMoveShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponderCapture: () => true,
+            onShouldBlockNativeResponder: () => true,
+            onPanResponderGrant: () => {
+                if (disabledRef.current || isLoadingRef.current) return;
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            },
+            onPanResponderMove: (_, gesture) => {
+                if (disabledRef.current || isLoadingRef.current || maxSwipeRef.current <= 0) return;
+                const newX = Math.max(0, Math.min(gesture.dx, maxSwipeRef.current));
+                translateX.setValue(newX);
 
-    const handleTouchMove = (e: any) => {
-        if (disabled || isLoading || maxSwipe <= 0) return;
-        const dx = e.nativeEvent.pageX - startXRef.current;
-        const newX = Math.max(0, Math.min(dx, maxSwipe));
-        translateX.setValue(newX);
+                const progress = newX / maxSwipeRef.current;
+                const now = Date.now();
+                if (now - lastHapticRef.current > 50 && progress > 0.1) {
+                    Haptics.selectionAsync();
+                    lastHapticRef.current = now;
+                }
+            },
+            onPanResponderRelease: (_, gesture) => {
+                if (disabledRef.current || isLoadingRef.current || maxSwipeRef.current <= 0) {
+                    translateX.setValue(0);
+                    return;
+                }
+                const progress = Math.max(0, gesture.dx) / maxSwipeRef.current;
 
-        const progress = newX / maxSwipe;
-        const now = Date.now();
-        if (now - lastHapticRef.current > 50 && progress > 0.1) {
-            Haptics.selectionAsync();
-            lastHapticRef.current = now;
-        }
-    };
-
-    const handleTouchEnd = (e: any) => {
-        if (disabled || isLoading || maxSwipe <= 0) {
-            translateX.setValue(0);
-            return;
-        }
-        const dx = e.nativeEvent.pageX - startXRef.current;
-        const progress = dx / maxSwipe;
-
-        if (progress >= SWIPE_THRESHOLD) {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            Animated.spring(translateX, {
-                toValue: maxSwipe,
-                useNativeDriver: true,
-                tension: 40,
-                friction: 7,
-            }).start(() => {
-                onSwipeComplete();
-                setTimeout(() => {
+                if (progress >= SWIPE_THRESHOLD) {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    Animated.spring(translateX, {
+                        toValue: maxSwipeRef.current,
+                        useNativeDriver: true,
+                        tension: 40,
+                        friction: 7,
+                    }).start(() => {
+                        onSwipeCompleteRef.current();
+                        setTimeout(() => {
+                            Animated.spring(translateX, {
+                                toValue: 0,
+                                useNativeDriver: true,
+                                tension: 40,
+                                friction: 8,
+                            }).start();
+                        }, 500);
+                    });
+                } else {
                     Animated.spring(translateX, {
                         toValue: 0,
                         useNativeDriver: true,
-                        tension: 40,
+                        tension: 60,
                         friction: 8,
                     }).start();
-                }, 500);
-            });
-        } else {
-            Animated.spring(translateX, {
-                toValue: 0,
-                useNativeDriver: true,
-                tension: 60,
-                friction: 8,
-            }).start();
-        }
-    };
+                }
+            },
+            onPanResponderTerminate: () => {
+                Animated.spring(translateX, {
+                    toValue: 0,
+                    useNativeDriver: true,
+                    tension: 60,
+                    friction: 8,
+                }).start();
+            },
+        })
+    ).current;
 
+    const safeMax = Math.max(1, maxSwipe);
     const textOpacity = translateX.interpolate({
-        inputRange: [0, Math.max(1, maxSwipe * 0.3), Math.max(1, maxSwipe)],
+        inputRange: [0, safeMax * 0.3, safeMax],
         outputRange: [1, 0.3, 0],
         extrapolate: 'clamp',
     });
@@ -118,7 +139,7 @@ const SwipeToTrade = ({
             >
                 <Text className="text-black text-base font-extrabold">
                     {isLoading ? 'Placing...' : (
-                        isInsufficientBalance ? 'Insufficient Balance' :
+                        isInsufficientBalance ? 'Insufficient trading balance' :
                             (amount && Number(amount) > 0 ? `Swipe to Bet $${amount}` : 'Swipe to Place Bet')
                     )}
                 </Text>
@@ -140,9 +161,7 @@ const SwipeToTrade = ({
                             transform: [{ translateX }],
                         },
                     ]}
-                    onTouchStart={handleTouchStart}
-                    onTouchMove={handleTouchMove}
-                    onTouchEnd={handleTouchEnd}
+                    {...thumbPanResponder.panHandlers}
                 >
                     <Ionicons name="chevron-forward" size={24} color="#FFE500" />
                 </Animated.View>
@@ -256,64 +275,34 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
     const [isLoadingCandles, setIsLoadingCandles] = useState(false);
     const [eventTitle, setEventTitle] = useState<string | null>(propEventTitle || null);
     const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
+    const [tradeStatus, setTradeStatus] = useState<string | null>(null);
 
-    // Quote state
+    // Quote state - computed locally from market price
     const [quoteOutAmount, setQuoteOutAmount] = useState<number | null>(null);
-    const [isFetchingQuote, setIsFetchingQuote] = useState(false);
-    const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Debounced quote fetching
+    // Compute "to win" locally from market bid/ask price
+    // Each winning share redeems for $1.00, so: shares = amount / price; toWin = shares - amount
     useEffect(() => {
-        if (!visible || !market || !backendUser || !amount || parseFloat(amount) <= 0) {
+        if (!visible || !market || !amount || parseFloat(amount) <= 0) {
             setQuoteOutAmount(null);
             return;
         }
 
-        if (debounceTimerRef.current) {
-            clearTimeout(debounceTimerRef.current);
+        const price = selectedSide === 'yes'
+            ? parseFloat(market.yesAsk || market.yesBid || '0')
+            : parseFloat(market.noAsk || market.noBid || '0');
+
+        if (price <= 0 || price >= 1) {
+            setQuoteOutAmount(null);
+            return;
         }
 
-        setIsFetchingQuote(true);
-        debounceTimerRef.current = setTimeout(async () => {
-            try {
-                if (!market.ticker) {
-                    setIsFetchingQuote(false);
-                    return;
-                }
-
-                const rawAmount = toRawAmount(Number(amount), 6);
-                const order = await requestOrder({
-                    userPublicKey: backendUser.walletAddress,
-                    amount: rawAmount,
-                    marketId: market.ticker,
-                    isYes: selectedSide === 'yes',
-                    isBuy: true,
-                    slippageBps: 100,
-                });
-
-                setQuoteOutAmount(Number(order.outAmount));
-            } catch (error: any) {
-                console.error("Failed to fetch quote:", error);
-
-                const errorMessage = error?.message || "";
-                if (errorMessage.includes("Zero out amount") || errorMessage.includes("500")) {
-                    setTradeError("Amount too low");
-                } else {
-                    setTradeError(null); // Don't show error for other fetch failures, just clear quote
-                }
-
-                setQuoteOutAmount(null);
-            } finally {
-                setIsFetchingQuote(false);
-            }
-        }, 500); // 500ms debounce
-
-        return () => {
-            if (debounceTimerRef.current) {
-                clearTimeout(debounceTimerRef.current);
-            }
-        };
-    }, [amount, selectedSide, market, backendUser, visible]);
+        const betAmt = parseFloat(amount);
+        const shares = betAmt / price;
+        // "To win" = profit = payout - cost = shares * $1 - betAmt
+        const toWin = shares - betAmt;
+        setQuoteOutAmount(toWin > 0 ? toWin : null);
+    }, [amount, selectedSide, market, visible]);
 
     // Fetch event title when sheet opens
     useEffect(() => {
@@ -328,12 +317,13 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
         fetchEventTitle();
     }, [visible, market?.eventTicker, propEventTitle]);
 
-    // Fetch USDC Balance (Polygon)
+    // Fetch USDC Balance on the Safe wallet (where Polymarket funds live)
     useEffect(() => {
         if (!visible || !backendUser?.walletAddress) return;
         const fetchBalance = async () => {
             try {
-                const balance = await fetchPolygonUsdcBalance(backendUser.walletAddress);
+                const balanceAddr = backendUser.safeAddress || backendUser.walletAddress;
+                const balance = await fetchPolygonUsdcBalance(balanceAddr);
                 setUsdcBalance(balance);
             } catch (e) {
                 console.error("Failed to load USDC balance", e);
@@ -431,12 +421,6 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
             setTradeError("Sign in to trade");
             return;
         }
-        // Gate: require Polymarket onboarding before trading
-        if (!backendUser.polymarketOnboardingStep || backendUser.polymarketOnboardingStep < 4) {
-            onClose();
-            tradeRouter.push("/onboarding/wallet-setup");
-            return;
-        }
         if (!walletProvider) {
             setTradeError("Wallet not connected");
             return;
@@ -451,43 +435,152 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
             return;
         }
 
+        // Get the correct token ID for the selected side
+        const tokenId = selectedSide === 'yes' ? market.yesMint : market.noMint;
+        if (!tokenId) {
+            setTradeError("Token ID not available for this market");
+            return;
+        }
+
+        // Get the price (use ask for buying)
+        const price = selectedSide === 'yes'
+            ? parseFloat(market.yesAsk || market.yesBid || '0')
+            : parseFloat(market.noAsk || market.noBid || '0');
+
+        if (price <= 0 || price >= 1) {
+            setTradeError("Invalid market price");
+            return;
+        }
+
         try {
             setIsTrading(true);
             setTradeError(null);
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-            const rawAmount = toRawAmount(Number(amount), 6);
+            // 1. Get ethers signer from Privy embedded wallet
+            setTradeStatus('Connecting wallet...');
+            await walletProvider.request({
+                method: "wallet_switchEthereumChain",
+                params: [{ chainId: "0x89" }], // Polygon (137)
+            });
+            const ethersProvider = new ethers.providers.Web3Provider(walletProvider);
+            const signer = ethersProvider.getSigner();
 
-            const { signature, order } = await executeTrade({
-                provider: walletProvider,
-                userPublicKey: backendUser.walletAddress,
-                amount: rawAmount,
-                marketId: market.ticker,
-                isYes: selectedSide === 'yes',
-                isBuy: true,
-                slippageBps: 100,
+            // ─── Inline Polymarket Onboarding (first-time trade) ───────────
+            const onboardingStep = backendUser.polymarketOnboardingStep || 0;
+
+            // Always derive Safe address client-side using the SDK for consistency
+            let safeAddr = backendUser.safeAddress;
+            if (!safeAddr) {
+                const eoaAddr = await signer.getAddress();
+                safeAddr = await deriveSafeAddress(eoaAddr);
+            }
+
+            if (onboardingStep < 4) {
+                console.log('[MarketTradeSheet] Onboarding incomplete (step', onboardingStep, '), running inline setup...');
+
+                // Step 1: Derive Safe address (tell backend)
+                if (onboardingStep < 1) {
+                    setTradeStatus('Setting up trading wallet...');
+                    const deriveResult = await api.deriveSafe();
+                    safeAddr = deriveResult.safeAddress;
+                    console.log('[MarketTradeSheet] Step 1 done — Safe derived:', safeAddr);
+                }
+
+                if (!safeAddr) {
+                    throw new Error('Failed to derive Safe address');
+                }
+
+                // Step 2: Deploy Safe (gasless via relay), poll until mined
+                if (onboardingStep < 2) {
+                    setTradeStatus('Deploying trading wallet...');
+
+                    const alreadyDeployed = await isSafeDeployedOnChain(safeAddr);
+                    if (alreadyDeployed) {
+                        console.log('[MarketTradeSheet] Safe already deployed on-chain, skipping relay deploy');
+                        await api.confirmSafeDeployed('already-deployed');
+                    } else {
+                        const relayClient = await getRelayClient(signer, safeAddr);
+                        const deployResponse = await relayClient.deploy();
+
+                        // Poll until the deploy tx is mined (matching reference implementation)
+                        const { RelayerTransactionState } = await import('@polymarket/builder-relayer-client');
+                        const deployResult = await relayClient.pollUntilState(
+                            deployResponse.transactionID,
+                            [
+                                RelayerTransactionState.STATE_MINED,
+                                RelayerTransactionState.STATE_CONFIRMED,
+                                RelayerTransactionState.STATE_FAILED,
+                            ],
+                            '60',
+                            3000,
+                        );
+
+                        if (!deployResult || deployResult.state === RelayerTransactionState.STATE_FAILED) {
+                            throw new Error('Safe deployment failed');
+                        }
+
+                        const txHash = deployResult.transactionHash || deployResult.proxyAddress || '';
+                        await api.confirmSafeDeployed(txHash);
+                        console.log('[MarketTradeSheet] Step 2 done — Safe deployed:', txHash);
+                    }
+                }
+
+                // Step 3: Set token approvals (gasless via relay), wait for mining
+                if (onboardingStep < 3) {
+                    setTradeStatus('Approving tokens...');
+                    const relayClient = await getRelayClient(signer, safeAddr);
+                    const approvalTxs = buildApprovalTransactions();
+                    const executeResult = await relayClient.execute(approvalTxs);
+                    await executeResult.wait();
+                    await api.confirmApprovalsSet('approvals-confirmed');
+                    console.log('[MarketTradeSheet] Step 3 done — Approvals mined');
+                }
+
+                // Step 4: Derive CLOB API credentials (uses EOA signatureType)
+                if (onboardingStep < 4) {
+                    setTradeStatus('Creating API credentials...');
+                    const creds = await deriveOrCreateApiKey(signer);
+                    await api.savePolymarketCredentials(creds);
+                    console.log('[MarketTradeSheet] Step 4 done — Credentials saved');
+                }
+
+                console.log('[MarketTradeSheet] Inline onboarding complete, placing order...');
+            }
+            // ─── End Onboarding ────────────────────────────────────────────
+
+            // 2. Calculate size (number of shares) = USDC amount / price per share
+            setTradeStatus('Executing order...');
+            const betAmt = parseFloat(amount);
+            const size = Math.floor((betAmt / price) * 100) / 100; // Round down to 2 decimals
+
+            // 3. Create EIP-712 signed CLOB order using Privy wallet
+            //    The Safe address is used as the maker in the EIP-712 signature.
+            //    Dummy creds are passed because our backend handles HMAC auth.
+            const signedOrder = await createSignedClobOrder({
+                signer,
+                creds: { key: '', secret: '', passphrase: '' },
+                safeAddress: safeAddr,
+                tokenId,
+                side: ClobSide.BUY,
+                price,
+                size,
+                feeRateBps: 0,
+                tickSize: '0.01',
+                negRisk: true,
             });
 
-            const estimatedSpendUsdc = fromRawAmount(order.inAmount, 6).toFixed(2);
-            const estimatedTokens = fromRawAmount(order.outAmount, 6);
-            const entryPrice = estimatedTokens > 0 ? (Number(estimatedSpendUsdc) / estimatedTokens).toFixed(4) : '0';
+            // 4. Submit signed order to our backend (which relays to CLOB with HMAC auth)
+            const result = await api.submitPolymarketOrder({
+                order: signedOrder,
+                conditionId: market.ticker,
+                tokenId,
+                side: 'BUY',
+                marketTitle: market?.title || market.ticker,
+            });
 
-            const tradeData = {
-                userId: backendUser.id,
-                marketTicker: market.ticker,
-                eventTicker: market.eventTicker,
-                side: selectedSide,
-                action: 'BUY' as const,
-                amount: estimatedSpendUsdc,
-                walletAddress: backendUser.walletAddress,
-                transactionSig: signature,
-                executedInAmount: order.inAmount,
-                executedOutAmount: order.outAmount,
-                entryPrice,
-                isDummy: true,
-            };
-
-            const savedTrade = await api.createTrade(tradeData);
+            const estimatedSpendUsdc = betAmt.toFixed(2);
+            const entryPrice = price.toFixed(4);
 
             const displayInfo = {
                 side: selectedSide,
@@ -497,12 +590,21 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
 
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-            setLastTradeId(savedTrade.id);
+            setLastTradeId(result.tradeId);
             setLastTradeInfo(displayInfo);
             setShowQuoteSheet(true);
 
             if (onTradeSuccess) {
-                onTradeSuccess(tradeData, displayInfo, savedTrade.id);
+                onTradeSuccess({
+                    userId: backendUser.id,
+                    marketTicker: market.ticker,
+                    eventTicker: market.eventTicker,
+                    side: selectedSide,
+                    action: 'BUY' as const,
+                    amount: estimatedSpendUsdc,
+                    walletAddress: backendUser.walletAddress,
+                    entryPrice,
+                }, displayInfo, result.tradeId);
             }
         } catch (error: any) {
             console.error('Trade error:', error);
@@ -510,13 +612,11 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
             setTradeError(error?.message || "Failed to place trade");
         } finally {
             setIsTrading(false);
+            setTradeStatus(null);
         }
     };
 
     const betAmount = parseFloat(amount || '0');
-    const estimatedProbability = market?.yesBid && market?.yesAsk
-        ? ((parseFloat(market.yesBid) + parseFloat(market.yesAsk)) / 2) * 100
-        : 50;
 
     const displayCandles = filteredCandles.length > 0 ? filteredCandles : (initialCandles || []);
     const chartCandles = useMemo(
@@ -761,13 +861,9 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                                         {betAmount > 0 && !tradeError && (
                                             <View className="items-end">
                                                 <Text className="text-txt-secondary text-[10px] uppercase">To Win</Text>
-                                                {isFetchingQuote ? (
-                                                    <ActivityIndicator size="small" color={Theme.accent} />
-                                                ) : (
-                                                    <Text className="text-[#52e717] text-2xl font-extrabold">
-                                                        ${quoteOutAmount ? (quoteOutAmount / 1000000).toFixed(2) : (betAmount * (100 / estimatedProbability)).toFixed(2)}
-                                                    </Text>
-                                                )}
+                                                <Text className="text-[#52e717] text-2xl font-extrabold">
+                                                    ${quoteOutAmount ? quoteOutAmount.toFixed(2) : '—'}
+                                                </Text>
                                             </View>
                                         )}
                                     </View>
@@ -796,7 +892,7 @@ export const MarketTradeSheet: React.FC<MarketTradeSheetProps> = ({
                 onChange={(next) => { setAmount(next.replace(',', '.')); setTradeError(null); }}
                 onClose={() => setAmountKeypadOpen(false)}
             />
-            <Toast visible={isTrading} message="Order processing..." />
+            <Toast visible={isTrading} message={tradeStatus || 'Order processing...'} />
             <TradeQuoteSheet
                 visible={showQuoteSheet && !!lastTradeInfo}
                 onClose={() => {

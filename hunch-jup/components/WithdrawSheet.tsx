@@ -20,6 +20,7 @@ import {
   View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { api, BridgeSupportedAssetsResponse } from "@/lib/api";
 
 // ── Theme constants ──
 const YELLOW = "#e8d723";
@@ -35,7 +36,15 @@ const STORAGE_KEY = "hunch_recent_wallets";
 const MAX_RECENT = 10;
 
 // ── Types ──
-type WithdrawPayload = { toAddress: string; amount: number };
+type WithdrawKind = "evm" | "svm";
+
+type WithdrawPayload = {
+  toAddress: string;
+  amount: number;
+  toChainId: string;
+  toTokenAddress: string;
+  kind: WithdrawKind;
+};
 
 type SavedWallet = {
   address: string;
@@ -84,6 +93,12 @@ export default function WithdrawSheet({
   const [addressTab, setAddressTab] = useState<"book" | "recent">("recent");
   const [recentWallets, setRecentWallets] = useState<SavedWallet[]>([]);
   const [addressBookWallets, setAddressBookWallets] = useState<SavedWallet[]>([]);
+
+  const [assets, setAssets] = useState<BridgeSupportedAssetsResponse["supportedAssets"] | null>(null);
+  const [assetsLoading, setAssetsLoading] = useState(false);
+  const [assetsError, setAssetsError] = useState<string | null>(null);
+  const [selectedChainId, setSelectedChainId] = useState<string | null>(null);
+  const [selectedTokenAddress, setSelectedTokenAddress] = useState<string | null>(null);
 
   // ── Animation ──
   const slideAnim = useRef(new Animated.Value(screenH)).current;
@@ -145,9 +160,37 @@ export default function WithdrawSheet({
       setAmount("");
       setToAddress("");
       setAddressTab("recent");
+      setAssetsError(null);
       stepAnim.setValue(0);
       loadWallets();
       Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, damping: 28, stiffness: 400, mass: 0.8 }).start();
+
+      const fetchAssets = async () => {
+        try {
+          setAssetsLoading(true);
+          const res = await api.getBridgeSupportedAssets();
+          const list = res.supportedAssets;
+          setAssets(list);
+
+          if (list.length > 0) {
+            const solAsset = list.find((a) =>
+              a.chainName.toLowerCase().includes("solana") &&
+              a.token.symbol.toUpperCase() === "USDC"
+            );
+            const initial = solAsset ?? list[0];
+            setSelectedChainId(initial.chainId);
+            setSelectedTokenAddress(initial.token.address);
+          }
+        } catch (err: any) {
+          console.error("[WithdrawSheet] Failed to fetch supported assets:", err);
+          setAssets(null);
+          setAssetsError(err?.message || "Failed to load supported assets");
+        } finally {
+          setAssetsLoading(false);
+        }
+      };
+
+      fetchAssets();
     } else {
       slideAnim.setValue(screenH);
     }
@@ -162,6 +205,45 @@ export default function WithdrawSheet({
     const v = Number(amount);
     return Number.isFinite(v) ? v : 0;
   }, [amount]);
+
+  const chainOptions = useMemo(() => {
+    if (!assets) return [];
+    const map = new Map<string, string>();
+    for (const a of assets) {
+      if (!map.has(a.chainId)) {
+        map.set(a.chainId, a.chainName);
+      }
+    }
+    return Array.from(map.entries()).map(([chainId, chainName]) => ({
+      chainId,
+      chainName,
+    }));
+  }, [assets]);
+
+  const tokenOptions = useMemo(() => {
+    if (!assets || !selectedChainId) return [];
+    return assets
+      .filter((a) => a.chainId === selectedChainId)
+      .filter((a) => {
+        const symbol = a.token.symbol.toUpperCase();
+        const isSol = a.chainName.toLowerCase().includes("solana");
+        if (isSol) {
+          return symbol === "USDC";
+        }
+        return symbol === "USDC" || symbol === "USDT" || symbol === "USDC.E";
+      });
+  }, [assets, selectedChainId]);
+
+  const selectedAsset = useMemo(() => {
+    if (!tokenOptions.length || !selectedTokenAddress) return null;
+    return (
+      tokenOptions.find((a) => a.token.address === selectedTokenAddress) ??
+      tokenOptions[0] ??
+      null
+    );
+  }, [tokenOptions, selectedTokenAddress]);
+
+  const minCheckoutUsd = selectedAsset?.minCheckoutUsd ?? 0;
 
   const appendDigit = (digit: string) => {
     let next = amount || "";
@@ -205,8 +287,18 @@ export default function WithdrawSheet({
   // ── Submit ──
   const handleSubmit = async () => {
     if (!toAddress.trim() || toAddress.trim().length < 10 || amountValue <= 0) return;
+    if (!selectedAsset) return;
+    const kind: WithdrawKind = selectedAsset.chainName.toLowerCase().includes("solana")
+      ? "svm"
+      : "evm";
     await saveWalletToRecent(toAddress.trim());
-    await onSubmit({ toAddress: toAddress.trim(), amount: amountValue });
+    await onSubmit({
+      toAddress: toAddress.trim(),
+      amount: amountValue,
+      toChainId: selectedAsset.chainId,
+      toTokenAddress: selectedAsset.token.address,
+      kind,
+    });
   };
 
   // ── Paste from clipboard ──
@@ -220,8 +312,16 @@ export default function WithdrawSheet({
     } catch {}
   };
 
-  const canContinue = amountValue > 0 && amountValue <= balance;
-  const canSubmit = toAddress.trim().length >= 10 && canContinue && !submitting;
+  const canContinue =
+    amountValue > 0 &&
+    amountValue <= balance;
+
+  const canSubmit =
+    toAddress.trim().length >= 10 &&
+    amountValue > 0 &&
+    amountValue <= balance &&
+    !!selectedAsset &&
+    !submitting;
 
   // ── Step slide animations ──
   const step1TranslateX = stepAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -screenW] });
@@ -346,7 +446,7 @@ export default function WithdrawSheet({
             </Animated.View>
 
             {/* ═══════════════════════════════════════ */}
-            {/* STEP 2 — Address Entry                 */}
+            {/* STEP 2 — Network, Token & Address      */}
             {/* ═══════════════════════════════════════ */}
             <Animated.View
               style={[styles.stepContainer, { transform: [{ translateX: step2TranslateX }] }]}
@@ -357,7 +457,7 @@ export default function WithdrawSheet({
                 <TouchableOpacity onPress={goBackToStep1} style={styles.iconBtn} activeOpacity={0.7}>
                   <Ionicons name="chevron-back" size={22} color={TEXT_PRIMARY} />
                 </TouchableOpacity>
-                <Text style={styles.topBarTitle}>To Address</Text>
+                <Text style={styles.topBarTitle}>Destination</Text>
                 <TouchableOpacity onPress={handleClose} style={styles.iconBtn} activeOpacity={0.7}>
                   <Ionicons name="close" size={20} color={TEXT_PRIMARY} />
                 </TouchableOpacity>
@@ -369,6 +469,96 @@ export default function WithdrawSheet({
                 keyboardVerticalOffset={insets.top + 60}
               >
                 <View style={styles.addressContent}>
+                  {/* Network & token selectors */}
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={styles.sectionLabel}>Network & token</Text>
+                    {assetsLoading && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 }}>
+                        <ActivityIndicator size="small" color={TEXT_PRIMARY} />
+                        <Text style={styles.helperText}>Loading supported networks…</Text>
+                      </View>
+                    )}
+                    {assetsError && (
+                      <Text style={[styles.helperText, { color: "#DC2626", marginTop: 6 }]}>{assetsError}</Text>
+                    )}
+                    {chainOptions.length > 0 && (
+                      <>
+                        <View style={styles.selectorRow}>
+                          <Text style={styles.selectorLabel}>Chain</Text>
+                          <View style={styles.selectorBox}>
+                            <FlatList
+                              horizontal
+                              data={chainOptions}
+                              keyExtractor={(item) => item.chainId}
+                              renderItem={({ item }) => {
+                                const active = item.chainId === selectedChainId;
+                                return (
+                                  <TouchableOpacity
+                                    style={[
+                                      styles.pillButton,
+                                      active && styles.pillButtonActive,
+                                    ]}
+                                    onPress={() => {
+                                      setSelectedChainId(item.chainId);
+                                      const firstToken = tokenOptions[0];
+                                      setSelectedTokenAddress(firstToken?.token.address ?? null);
+                                    }}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.pillText,
+                                        active && styles.pillTextActive,
+                                      ]}
+                                    >
+                                      {item.chainName}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              }}
+                              showsHorizontalScrollIndicator={false}
+                            />
+                          </View>
+                        </View>
+                        <View style={[styles.selectorRow, { marginTop: 8 }]}>
+                          <Text style={styles.selectorLabel}>Token</Text>
+                          <View style={styles.selectorBox}>
+                            <FlatList
+                              horizontal
+                              data={tokenOptions}
+                              keyExtractor={(item) => item.token.address}
+                              renderItem={({ item }) => {
+                                const active = item.token.address === selectedTokenAddress;
+                                return (
+                                  <TouchableOpacity
+                                    style={[
+                                      styles.pillButton,
+                                      active && styles.pillButtonActive,
+                                    ]}
+                                    onPress={() => setSelectedTokenAddress(item.token.address)}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.pillText,
+                                        active && styles.pillTextActive,
+                                      ]}
+                                    >
+                                      {item.token.symbol} on {item.chainName}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              }}
+                              showsHorizontalScrollIndicator={false}
+                            />
+                          </View>
+                        </View>
+                        {selectedAsset && (
+                          <Text style={[styles.helperText, { marginTop: 6 }]}>
+                            Minimum for this route: ${minCheckoutUsd.toFixed(2)} USDC.e
+                          </Text>
+                        )}
+                      </>
+                    )}
+                  </View>
                   {/* Address input */}
                   <View style={styles.addressInputRow}>
                     <Text style={styles.toLabel}>To:</Text>
@@ -671,6 +861,53 @@ const styles = StyleSheet.create({
   addressContent: {
     flex: 1,
     paddingHorizontal: 20,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: TEXT_DIM,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  helperText: {
+    fontSize: 11,
+    color: TEXT_MUTED,
+  },
+  selectorRow: {
+    flexDirection: "column",
+    gap: 6,
+  },
+  selectorLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: TEXT_MUTED,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  selectorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  pillButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: SURFACE_BORDER,
+    marginRight: 8,
+    backgroundColor: "rgba(255,255,255,0.7)",
+  },
+  pillButtonActive: {
+    backgroundColor: "#0f172a",
+    borderColor: "#0f172a",
+  },
+  pillText: {
+    fontSize: 11,
+    color: TEXT_DIM,
+    fontWeight: "600",
+  },
+  pillTextActive: {
+    color: "#F9FAFB",
   },
   addressInputRow: {
     flexDirection: "row",

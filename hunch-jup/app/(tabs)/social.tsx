@@ -8,7 +8,7 @@ import { Theme } from '@/constants/theme';
 import { useUser } from "@/contexts/UserContext";
 import { api, getMarketDetails, marketsApi } from "@/lib/api";
 import { invertCandlesForNoSide } from "@/lib/marketUtils";
-import { User as BackendUser, CandleData, Event, EventEvidence, Market, Trade } from "@/lib/types";
+import { User as BackendUser, CandleData, Event, EventEvidence, Market, PolymarketProfile, Trade } from "@/lib/types";
 import { Ionicons } from "@expo/vector-icons";
 import { useEmbeddedEthereumWallet } from "@privy-io/expo";
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -396,6 +396,7 @@ export default function SocialScreen() {
     const [isLoadingSuggested, setIsLoadingSuggested] = useState(false);
     const [composerVisible, setComposerVisible] = useState(false);
     const [notifSidebarVisible, setNotifSidebarVisible] = useState(false);
+    const [polymarketProfiles, setPolymarketProfiles] = useState<PolymarketProfile[]>([]);
 
     // Load evidence on mount
     useEffect(() => {
@@ -603,41 +604,31 @@ export default function SocialScreen() {
         if (query.trim().length < 2) {
             setSearchResults([]);
             setSearchMarketResults([]);
+            setPolymarketProfiles([]);
             return;
         }
         setIsSearching(true);
         setIsSearchingMarkets(true);
-        const normalizedQuery = query.trim().toLowerCase();
         try {
-            const [results, { events }] = await Promise.all([
+            // Fetch from backend search (users) and Polymarket Gamma API in parallel
+            const [userResults, gammaResults] = await Promise.all([
                 api.searchUsers(query),
-                marketsApi.fetchEvents(80, { status: 'active', withNestedMarkets: true }),
+                marketsApi.searchPolymarket(query, 10),
             ]);
-            setSearchResults(results);
+            setSearchResults(userResults);
+            setPolymarketProfiles(gammaResults.profiles || []);
+
+            // Build market items from Gamma events
             const marketMatches: SearchMarketItem[] = [];
             const seenMarkets = new Set<string>();
 
-            events.forEach(event => {
-                const eventTitle = event.title?.toLowerCase() || '';
-                const eventSubtitle = event.subtitle?.toLowerCase() || '';
-                const eventMatches = eventTitle.includes(normalizedQuery) || eventSubtitle.includes(normalizedQuery);
+            (gammaResults.events || []).forEach(event => {
+                // Add event itself
+                marketMatches.push({ type: 'event', event });
 
-                if (eventMatches) {
-                    marketMatches.push({ type: 'event', event });
-                }
-
+                // Add each nested market
                 (event.markets || []).forEach(market => {
-                    const marketTitle = market.title?.toLowerCase() || '';
-                    const marketSubtitle = market.subtitle?.toLowerCase() || '';
-                    const yesSubtitle = market.yesSubTitle?.toLowerCase() || '';
-                    const noSubtitle = market.noSubTitle?.toLowerCase() || '';
-                    const marketMatchesQuery =
-                        marketTitle.includes(normalizedQuery) ||
-                        marketSubtitle.includes(normalizedQuery) ||
-                        yesSubtitle.includes(normalizedQuery) ||
-                        noSubtitle.includes(normalizedQuery);
-
-                    if (marketMatchesQuery && !seenMarkets.has(market.ticker)) {
+                    if (!seenMarkets.has(market.ticker)) {
                         seenMarkets.add(market.ticker);
                         marketMatches.push({ type: 'market', market, event });
                     }
@@ -652,7 +643,6 @@ export default function SocialScreen() {
                 try {
                     const stored = await AsyncStorage.getItem('previousSearches');
                     const existing: SearchMarketItem[] = stored ? JSON.parse(stored) : [];
-                    // Add new results, avoiding duplicates
                     const newSearches = [...finalResults];
                     const combined = [...newSearches, ...existing.filter(item => {
                         const itemId = item.type === 'event' ? item.event.ticker : item.market.ticker;
@@ -660,7 +650,7 @@ export default function SocialScreen() {
                             const newId = newItem.type === 'event' ? newItem.event.ticker : newItem.market.ticker;
                             return newId === itemId;
                         });
-                    })].slice(0, 10); // Keep only 10 most recent
+                    })].slice(0, 10);
                     await AsyncStorage.setItem('previousSearches', JSON.stringify(combined));
                     setPreviousSearches(combined);
                 } catch (error) {
@@ -668,7 +658,7 @@ export default function SocialScreen() {
                 }
             }
         } catch (error) {
-            console.error("Failed to search users:", error);
+            console.error("Failed to search:", error);
         } finally {
             setIsSearching(false);
             setIsSearchingMarkets(false);
@@ -1065,66 +1055,174 @@ export default function SocialScreen() {
                                 searchQuery.trim().length === 0 && previousSearches.length > 0
                                     ? previousSearches.map((item) => ({ type: 'marketResult' as const, item }))
                                     : [
+                                        // Section header: Markets & Events
+                                        ...(searchMarketResults.length > 0
+                                            ? [{ type: 'sectionHeader' as const, title: 'Markets & Events' }]
+                                            : []),
                                         ...searchMarketResults.map((item) => ({ type: 'marketResult' as const, item })),
+                                        // Section header: Polymarket Profiles
+                                        ...(polymarketProfiles.length > 0
+                                            ? [{ type: 'sectionHeader' as const, title: 'Polymarket Traders' }]
+                                            : []),
+                                        ...polymarketProfiles.map((item) => ({ type: 'polyProfile' as const, item })),
+                                        // Section header: Hunch Users
+                                        ...(searchResults.length > 0
+                                            ? [{ type: 'sectionHeader' as const, title: 'Hunch Users' }]
+                                            : []),
                                         ...searchResults.map((item) => ({ type: 'userResult' as const, item })),
                                     ]
                             }
-                            keyExtractor={(entry) =>
-                                entry.type === 'marketResult'
-                                    ? entry.item.type === 'event'
-                                        ? `event-${entry.item.event.ticker}`
-                                        : `market-${entry.item.market.ticker}`
-                                    : `user-${entry.item.id}`
-                            }
-                            renderItem={({ item: entry }) =>
-                                entry.type === 'userResult' ? (
-                                    <SearchResultRow
-                                        item={entry.item}
-                                        isFollowing={followingIds.has(entry.item.id)}
-                                        inProgress={followingInProgress.has(entry.item.id)}
-                                        isSelf={backendUser?.id === entry.item.id}
-                                        canFollow={!!backendUser}
-                                        onFollow={() => handleFollowUser(entry.item.id)}
-                                        onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: entry.item.id } })}
-                                    />
-                                ) : (
-                                    <TouchableOpacity
-                                        className="flex-row items-center py-3.5 px-5"
-                                        onPress={() => {
-                                            if (entry.item.type === 'event') {
-                                                router.push({ pathname: '/event/[ticker]', params: { ticker: entry.item.event.ticker } });
-                                            } else {
-                                                handleOpenSearchMarket(entry.item.market, entry.item.event);
-                                            }
-                                        }}
-                                        activeOpacity={0.7}
-                                    >
-                                        <View className="w-12 h-12 rounded-full justify-center items-center mr-3.5 bg-app-card border border-border">
-                                            <Ionicons
-                                                name={entry.item.type === 'event' ? 'sparkles-outline' : 'stats-chart-outline'}
-                                                size={22}
-                                                color={Theme.textPrimary}
-                                            />
+                            keyExtractor={(entry, index) => {
+                                if ('type' in entry && entry.type === 'sectionHeader') return `section-${(entry as any).title}-${index}`;
+                                if ('type' in entry && entry.type === 'polyProfile') return `poly-${(entry as any).item.id}`;
+                                if ('type' in entry && entry.type === 'userResult') return `user-${(entry as any).item.id}`;
+                                if ('type' in entry && entry.type === 'marketResult') {
+                                    const mItem = (entry as any).item;
+                                    return mItem.type === 'event'
+                                        ? `event-${mItem.event.ticker}`
+                                        : `market-${mItem.market.ticker}`;
+                                }
+                                return `item-${index}`;
+                            }}
+                            renderItem={({ item: entry }) => {
+                                // Section header
+                                if ('type' in entry && entry.type === 'sectionHeader') {
+                                    return (
+                                        <View className="px-5 pt-5 pb-2">
+                                            <Text className="text-[13px] font-bold text-txt-disabled uppercase tracking-wider">
+                                                {(entry as any).title}
+                                            </Text>
                                         </View>
-                                        <View className="flex-1">
-                                            <Text className="text-base font-semibold text-txt-primary mb-0.5" numberOfLines={1}>
-                                                {entry.item.type === 'event' ? entry.item.event.title : entry.item.market.title}
-                                            </Text>
-                                            <Text className="text-[13px] text-txt-disabled" numberOfLines={1}>
-                                                {entry.item.type === 'event'
-                                                    ? (entry.item.event.subtitle || 'Event')
-                                                    : (entry.item.market.subtitle || entry.item.market.yesSubTitle || entry.item.market.noSubTitle || 'Market')}
-                                            </Text>
-                                            {entry.item.type === 'market' && entry.item.event?.title ? (
-                                                <Text className="text-[11px] text-txt-secondary mt-1" numberOfLines={1}>
-                                                    {entry.item.event.title}
+                                    );
+                                }
+
+                                // Polymarket profile
+                                if ('type' in entry && entry.type === 'polyProfile') {
+                                    const profile = (entry as any).item as PolymarketProfile;
+                                    const profileImg = profile.profileImageOptimized?.imageUrlOptimized || profile.profileImage;
+                                    const displayName = profile.name || profile.pseudonym || 'Trader';
+                                    return (
+                                        <TouchableOpacity
+                                            className="flex-row items-center py-3.5 px-5"
+                                            activeOpacity={0.7}
+                                            onPress={() => {
+                                                // Could deeplink to Polymarket profile in future
+                                            }}
+                                        >
+                                            <View className="w-12 h-12 rounded-full justify-center items-center mr-3.5 bg-[#F0E6FF] border border-[#D4C4F0]">
+                                                {profileImg ? (
+                                                    <Image
+                                                        source={{ uri: profileImg }}
+                                                        className="w-full h-full rounded-full"
+                                                    />
+                                                ) : (
+                                                    <Ionicons name="person" size={22} color="#8B5CF6" />
+                                                )}
+                                            </View>
+                                            <View className="flex-1">
+                                                <Text className="text-base font-semibold text-txt-primary mb-0.5" numberOfLines={1}>
+                                                    {displayName}
                                                 </Text>
-                                            ) : null}
-                                        </View>
-                                    </TouchableOpacity>
-                                )
-                            }
-                            contentContainerStyle={{ paddingTop: 12, paddingBottom: 80 }}
+                                                {profile.pseudonym && profile.name && profile.pseudonym !== profile.name ? (
+                                                    <Text className="text-[13px] text-txt-disabled" numberOfLines={1}>
+                                                        @{profile.pseudonym}
+                                                    </Text>
+                                                ) : null}
+                                                {profile.bio ? (
+                                                    <Text className="text-[12px] text-txt-secondary mt-1" numberOfLines={2}>
+                                                        {profile.bio}
+                                                    </Text>
+                                                ) : null}
+                                            </View>
+                                            <View className="bg-[#F0E6FF] px-2.5 py-1 rounded-full">
+                                                <Text className="text-[11px] font-semibold text-[#7C3AED]">Polymarket</Text>
+                                            </View>
+                                        </TouchableOpacity>
+                                    );
+                                }
+
+                                // User result
+                                if ('type' in entry && entry.type === 'userResult') {
+                                    return (
+                                        <SearchResultRow
+                                            item={(entry as any).item}
+                                            isFollowing={followingIds.has((entry as any).item.id)}
+                                            inProgress={followingInProgress.has((entry as any).item.id)}
+                                            isSelf={backendUser?.id === (entry as any).item.id}
+                                            canFollow={!!backendUser}
+                                            onFollow={() => handleFollowUser((entry as any).item.id)}
+                                            onPress={() => router.push({ pathname: '/user/[userId]', params: { userId: (entry as any).item.id } })}
+                                        />
+                                    );
+                                }
+
+                                // Market / Event result
+                                if ('type' in entry && entry.type === 'marketResult') {
+                                    const mItem = (entry as any).item as SearchMarketItem;
+                                    const isEvent = mItem.type === 'event';
+                                    const title = isEvent ? mItem.event.title : mItem.market.title;
+                                    const subtitle = isEvent
+                                        ? (mItem.event.subtitle || `${mItem.event.markets?.length || 0} markets`)
+                                        : (mItem.market.subtitle || mItem.market.yesSubTitle || mItem.market.noSubTitle || 'Market');
+                                    const imageUrl = isEvent
+                                        ? (mItem.event.imageUrl || null)
+                                        : (mItem.market.image_url || (mItem.event?.imageUrl) || null);
+                                    const yesPrice = !isEvent && mItem.market.yesBid ? parseFloat(mItem.market.yesBid) : null;
+
+                                    return (
+                                        <TouchableOpacity
+                                            className="flex-row items-center py-3.5 px-5"
+                                            onPress={() => {
+                                                if (isEvent) {
+                                                    router.push({ pathname: '/event/[ticker]', params: { ticker: mItem.event.ticker } });
+                                                } else {
+                                                    handleOpenSearchMarket(mItem.market, mItem.event);
+                                                }
+                                            }}
+                                            activeOpacity={0.7}
+                                        >
+                                            <View className="w-12 h-12 rounded-2xl justify-center items-center mr-3.5 bg-app-card border border-border overflow-hidden">
+                                                {imageUrl ? (
+                                                    <Image
+                                                        source={{ uri: imageUrl }}
+                                                        className="w-full h-full"
+                                                        resizeMode="cover"
+                                                    />
+                                                ) : (
+                                                    <Ionicons
+                                                        name={isEvent ? 'sparkles-outline' : 'stats-chart-outline'}
+                                                        size={22}
+                                                        color={Theme.textPrimary}
+                                                    />
+                                                )}
+                                            </View>
+                                            <View className="flex-1">
+                                                <Text className="text-base font-semibold text-txt-primary mb-0.5" numberOfLines={1}>
+                                                    {title}
+                                                </Text>
+                                                <Text className="text-[13px] text-txt-disabled" numberOfLines={1}>
+                                                    {subtitle}
+                                                </Text>
+                                                {!isEvent && mItem.event?.title ? (
+                                                    <Text className="text-[11px] text-txt-secondary mt-1" numberOfLines={1}>
+                                                        {mItem.event.title}
+                                                    </Text>
+                                                ) : null}
+                                            </View>
+                                            {yesPrice != null && yesPrice > 0 && (
+                                                <View className="bg-[#ECFDF5] px-2.5 py-1.5 rounded-lg ml-2">
+                                                    <Text className="text-[13px] font-bold text-[#059669]">
+                                                        {Math.round(yesPrice * 100)}¢
+                                                    </Text>
+                                                </View>
+                                            )}
+                                        </TouchableOpacity>
+                                    );
+                                }
+
+                                return null;
+                            }}
+                            contentContainerStyle={{ paddingTop: 4, paddingBottom: 80 }}
                             showsVerticalScrollIndicator={false}
                             ListEmptyComponent={() => {
                                 if (searchQuery.trim().length === 0 && previousSearches.length === 0) {

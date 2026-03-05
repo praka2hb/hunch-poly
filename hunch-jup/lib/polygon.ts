@@ -116,6 +116,35 @@ export async function fetchPolygonUsdcBalance(
     return nativeBalance + bridgedBalance;
 }
 
+// ─── Check if a Safe (or any contract) is deployed at an address ────
+/**
+ * Check if a contract (e.g. a Safe wallet) is deployed at the given address
+ * by querying `eth_getCode`. Returns true if bytecode exists (not "0x").
+ *
+ * @param address  EVM address (0x...)
+ * @param rpcUrl   Optional RPC override
+ */
+export async function isSafeDeployedOnChain(
+    address: string,
+    rpcUrl?: string,
+): Promise<boolean> {
+    const body = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_getCode',
+        params: [address, 'latest'],
+    });
+    try {
+        const json = await jsonRpcCall(body, rpcUrl);
+        const code = json.result || '0x';
+        // If there's code beyond just "0x", the contract is deployed
+        return code !== '0x' && code !== '0x0' && code.length > 2;
+    } catch (err) {
+        console.warn('[polygon] isSafeDeployedOnChain failed:', err);
+        return false;
+    }
+}
+
 // ─── Fetch native POL (MATIC) balance ───────────────────────────────
 /**
  * Fetch native POL balance for an EVM address on Polygon.
