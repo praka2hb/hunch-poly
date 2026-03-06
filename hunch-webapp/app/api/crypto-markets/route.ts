@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/app/lib/db';
 
 const GAMMA_BASE_URL = process.env.POLYMARKET_GAMMA_URL || 'https://gamma-api.polymarket.com';
+const WS_PROXY_HTTP_URL = process.env.WS_PROXY_HTTP_URL;
 
 // Interval durations in seconds
 const INTERVAL_SECONDS: Record<string, number> = {
@@ -61,6 +63,63 @@ export async function GET(request: NextRequest) {
         const clobTokenIds = safeJsonParse(market.clobTokenIds) || [];
         const outcomePrices = safeJsonParse(market.outcomePrices) || [];
 
+        const openTime = event.startDate ? new Date(event.startDate).getTime() : null;
+        const closeTime = market.endDate ? new Date(market.endDate).getTime() : null;
+
+        // ── Opening price resolution: 3-tier priority ─────────────────
+        let openingPrice: number | null = null;
+        let openingPriceIsAccurate = false;
+
+        // Tier 1: Already stored in DB (most reliable — survives proxy restarts)
+        const cached = await prisma.cryptoMarketCache.findUnique({
+            where: { slug: event.slug },
+        });
+
+        if (cached) {
+            openingPrice = cached.openingPrice;
+            openingPriceIsAccurate = cached.isAccurate;
+        }
+
+        // Tier 2: Fetch from proxy buffer (accurate if proxy has it)
+        if (!openingPrice && WS_PROXY_HTTP_URL && openTime) {
+            try {
+                const priceRes = await fetch(
+                    `${WS_PROXY_HTTP_URL}/price-at/${asset}/${openTime}`,
+                    { signal: AbortSignal.timeout(2000) }
+                );
+                if (priceRes.ok) {
+                    const priceData = await priceRes.json();
+                    openingPrice = priceData.price;
+                    openingPriceIsAccurate = priceData.isAccurate;
+
+                    // Store in DB — only if accurate, never overwrite with approximate
+                    if (priceData.isAccurate && closeTime) {
+                        await prisma.cryptoMarketCache.upsert({
+                            where: { slug: event.slug },
+                            create: {
+                                slug: event.slug,
+                                asset,
+                                interval,
+                                openingPrice: priceData.price,
+                                openTime: BigInt(openTime),
+                                closeTime: BigInt(closeTime),
+                                isAccurate: true,
+                            },
+                            update: {}, // never overwrite once stored accurately
+                        }).catch(() => {}); // non-blocking — don't fail the response
+                    }
+                }
+            } catch {
+                // Proxy unreachable — fall through to Tier 3
+            }
+        }
+
+        // Tier 3: lastTradePrice as last resort (approximate)
+        if (!openingPrice) {
+            openingPrice = market.lastTradePrice;
+            openingPriceIsAccurate = false;
+        }
+
         const result = {
             conditionId: market.conditionId,
             upTokenId: clobTokenIds[0] || null,
@@ -70,14 +129,16 @@ export async function GET(request: NextRequest) {
             seriesSlug: `${asset}-updown-${interval}`,
             asset,
             interval,
-            closeTime: market.endDate ? new Date(market.endDate).getTime() : null,
-            openTime: event.startDate ? new Date(event.startDate).getTime() : null,
+            closeTime,
+            openTime,
             upProbability: outcomePrices[0] ? parseFloat(outcomePrices[0]) : null,
             downProbability: outcomePrices[1] ? parseFloat(outcomePrices[1]) : null,
             lastTradePrice: market.lastTradePrice,
             bestBid: market.bestBid,
             bestAsk: market.bestAsk,
             acceptingOrders: market.acceptingOrders,
+            openingPrice: openingPrice ?? market.lastTradePrice,
+            openingPriceIsAccurate,
         };
 
         return NextResponse.json(result, {

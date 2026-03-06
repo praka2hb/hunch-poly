@@ -331,3 +331,18 @@ model PositionMilestone {
   @@unique([positionId, milestoneType]) // CRITICAL: Ensures once-per-position-per-milestone deduplication
   @@index([positionId])
 }
+
+model CryptoMarketCache {
+  id           String   @id @default(cuid())
+  slug         String   @unique          // e.g. btc-updown-5m-1772742000
+  asset        String                    // btc | eth | sol
+  interval     String                    // 5m | 15m
+  openingPrice Float                     // Chainlink price at eventStartTime
+  openTime     BigInt                    // unix ms of eventStartTime
+  closeTime    BigInt                    // unix ms of endDate
+  isAccurate   Boolean  @default(false)  // true = from proxy within 60s of openTime
+  createdAt    DateTime @default(now())
+
+  @@index([asset, interval])
+  @@index([createdAt])
+}
